@@ -1,0 +1,63 @@
+services:
+  app:
+    build: .
+    container_name: fileupload-app
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/fileupload?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=rootpassword
+      - FILE_UPLOAD_DIR=/app/uploads
+      # JVM settings for large file handling (adjust based on available memory)
+      - JAVA_OPTS=-Xms512m -Xmx4g -XX:+UseG1GC -XX:MaxDirectMemorySize=1g
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Mount upload directory for persistent storage
+      - upload-data:/app/uploads
+    networks:
+      - fileupload-network
+    restart: unless-stopped
+    # Increase timeout for large uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  db:
+    image: mysql:8.0
+    container_name: fileupload-db
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword
+      - MYSQL_DATABASE=fileupload
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - fileupload-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  # Persistent storage for uploaded files
+  upload-data:
+    driver: local
+  # Persistent storage for MySQL data
+  mysql-data:
+    driver: local
+
+networks:
+  fileupload-network:
+    driver: bridge

@@ -1,26 +1,305 @@
-<html xmlns:th="http://www.thymeleaf.org">
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Large File Upload - Spring Boot</title>
+    <link rel="stylesheet" th:href="@{/webjars/bootstrap/css/bootstrap.min.css}">
+    <style>
+        body { background-color: #f8f9fa; }
+        .upload-zone {
+            border: 3px dashed #dee2e6;
+            border-radius: 10px;
+            padding: 40px;
+            text-align: center;
+            transition: all 0.3s ease;
+            background: #fff;
+        }
+        .upload-zone:hover, .upload-zone.dragover {
+            border-color: #0d6efd;
+            background: #f0f7ff;
+        }
+        .upload-zone.uploading {
+            border-color: #198754;
+            background: #f0fff4;
+        }
+        .progress { height: 25px; }
+        .progress-bar { font-size: 14px; line-height: 25px; }
+        .file-icon { font-size: 1.2rem; }
+        .stats-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .stats-card .text-white-50 { color: rgba(255,255,255,0.7) !important; }
+        .table th { background-color: #f8f9fa; position: sticky; top: 0; }
+        .upload-info { font-size: 0.9rem; color: #6c757d; }
+        #uploadSpeed { font-family: monospace; }
+    </style>
+</head>
 <body>
+<nav class="navbar navbar-dark bg-dark mb-4">
+    <div class="container">
+        <a class="navbar-brand" href="/">
+            <span class="me-2">📁</span>Large File Upload Manager
+        </a>
+        <span class="navbar-text text-white-50">Supports files up to 10GB</span>
+    </div>
+</nav>
 
+<div class="container">
+    <!-- Storage Stats -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card stats-card text-white">
+                <div class="card-body">
+                    <h6 class="text-white-50">Total Files</h6>
+                    <h3 th:text="${totalFiles}">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stats-card text-white">
+                <div class="card-body">
+                    <h6 class="text-white-50">Storage Used</h6>
+                    <h3 th:text="${totalSize}">0 B</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stats-card text-white">
+                <div class="card-body">
+                    <h6 class="text-white-50">Available Space</h6>
+                    <h3 th:text="${availableSpace}">0 B</h3>
+                </div>
+            </div>
+        </div>
+    </div>
 
-<div>
-    <form method="POST" enctype="multipart/form-data" action="/upload">
-        <table>
-            <tr>
-                <td>File to upload:</td><td><input type="file" name="file" /></td>
-                <td>name:</td><td><input type="text" name="name"/></td>
-            </tr>
-            <tr><td></td><td><input type="submit" value="upload"/></td></tr>
-        </table>
-    </form>
+    <!-- Alert Messages -->
+    <div th:if="${success}" class="alert alert-success alert-dismissible fade show" role="alert">
+        <strong>✅ Success!</strong> <span th:text="${success}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    <div th:if="${error}" class="alert alert-danger alert-dismissible fade show" role="alert">
+        <strong>❌ Error!</strong> <span th:text="${error}"></span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+
+    <!-- Upload Section -->
+    <div class="card mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0">⬆️ Upload Large File</h5>
+        </div>
+        <div class="card-body">
+            <form id="uploadForm" method="post" th:action="@{/upload}" enctype="multipart/form-data">
+                <div id="uploadZone" class="upload-zone mb-3">
+                    <div id="uploadPrompt">
+                        <div style="font-size: 3rem;">📤</div>
+                        <h4>Drag & Drop your file here</h4>
+                        <p class="text-muted">or click to browse (max 10GB)</p>
+                        <input type="file" id="fileInput" name="file" class="d-none" required>
+                        <button type="button" class="btn btn-outline-primary btn-lg" onclick="document.getElementById('fileInput').click()">
+                            Select File
+                        </button>
+                    </div>
+                    <div id="fileInfo" class="d-none">
+                        <div class="mb-2"><span id="fileName" class="fw-bold"></span></div>
+                        <div class="text-muted mb-3">Size: <span id="fileSize"></span></div>
+                    </div>
+                </div>
+
+                <!-- Progress Section -->
+                <div id="progressSection" class="d-none mb-3">
+                    <div class="progress mb-2">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated"
+                             role="progressbar" style="width: 0%">0%</div>
+                    </div>
+                    <div class="d-flex justify-content-between upload-info">
+                        <span>Uploaded: <span id="uploadedSize">0 B</span> / <span id="totalSize">0 B</span></span>
+                        <span>Speed: <span id="uploadSpeed">-- MB/s</span></span>
+                        <span>ETA: <span id="uploadEta">--</span></span>
+                    </div>
+                </div>
+
+                <div class="d-grid">
+                    <button type="submit" id="uploadBtn" class="btn btn-primary btn-lg" disabled>
+                        <span id="uploadBtnText">📤 Upload File</span>
+                        <span id="uploadSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Files List -->
+    <div class="card">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">📋 Uploaded Files</h5>
+            <span class="badge bg-secondary" th:text="${#lists.size(files)}">0</span>
+        </div>
+        <div class="card-body p-0">
+            <div th:if="${#lists.isEmpty(files)}" class="text-center py-5 text-muted">
+                <div style="font-size: 3rem;">📭</div>
+                <p>No files uploaded yet</p>
+            </div>
+
+            <div th:unless="${#lists.isEmpty(files)}" class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                <table class="table table-hover align-middle mb-0">
+                    <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>File Name</th>
+                        <th>Type</th>
+                        <th>Size</th>
+                        <th>Uploaded</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <tr th:each="file, stat : ${files}">
+                        <td th:text="${stat.index + 1}"></td>
+                        <td>
+                            <span class="file-icon me-2">📄</span>
+                            <span th:text="${file.fileName}" th:title="${file.fileName}"></span>
+                        </td>
+                        <td><span class="badge bg-light text-dark" th:text="${file.contentType ?: 'Unknown'}"></span></td>
+                        <td>
+                            <span th:if="${file.fileSize >= 1073741824}"
+                                  th:text="${#numbers.formatDecimal(file.fileSize / 1073741824.0, 1, 2)} + ' GB'"
+                                  class="text-danger fw-bold"></span>
+                            <span th:if="${file.fileSize < 1073741824 and file.fileSize >= 1048576}"
+                                  th:text="${#numbers.formatDecimal(file.fileSize / 1048576.0, 1, 2)} + ' MB'"></span>
+                            <span th:if="${file.fileSize < 1048576}"
+                                  th:text="${#numbers.formatDecimal(file.fileSize / 1024.0, 1, 2)} + ' KB'"></span>
+                        </td>
+                        <td th:text="${#temporals.format(file.uploadedAt, 'yyyy-MM-dd HH:mm')}"></td>
+                        <td class="text-end">
+                            <a th:href="@{/download/{id}(id=${file.id})}" class="btn btn-sm btn-success">⬇️ Download</a>
+                            <form th:action="@{/delete/{id}(id=${file.id})}" method="post" style="display:inline"
+                                  onsubmit="return confirm('Delete this file?');">
+                                <button type="submit" class="btn btn-sm btn-danger">🗑️ Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <footer class="text-center text-muted py-4 mt-4">
+        <small>Large File Upload Manager - Spring Boot 3.2 | Supports streaming uploads up to 10GB</small>
+    </footer>
 </div>
 
-<div>
-    <ul>
-        <li th:each="name : ${names}">
-            <a th:href="${name}" th:text="${name}" />
-        </li>
-    </ul>
-</div>
+<script th:src="@{/webjars/bootstrap/js/bootstrap.bundle.min.js}"></script>
+<script>
+    const uploadZone = document.getElementById('uploadZone');
+    const fileInput = document.getElementById('fileInput');
+    const uploadForm = document.getElementById('uploadForm');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const progressSection = document.getElementById('progressSection');
+    const progressBar = document.getElementById('progressBar');
 
+    // Drag and drop
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
+        uploadZone.addEventListener(event, e => { e.preventDefault(); e.stopPropagation(); });
+    });
+    ['dragenter', 'dragover'].forEach(event => {
+        uploadZone.addEventListener(event, () => uploadZone.classList.add('dragover'));
+    });
+    ['dragleave', 'drop'].forEach(event => {
+        uploadZone.addEventListener(event, () => uploadZone.classList.remove('dragover'));
+    });
+    uploadZone.addEventListener('drop', e => {
+        fileInput.files = e.dataTransfer.files;
+        handleFileSelect();
+    });
+
+    fileInput.addEventListener('change', handleFileSelect);
+
+    function handleFileSelect() {
+        const file = fileInput.files[0];
+        if (file) {
+            document.getElementById('uploadPrompt').classList.add('d-none');
+            document.getElementById('fileInfo').classList.remove('d-none');
+            document.getElementById('fileName').textContent = file.name;
+            document.getElementById('fileSize').textContent = formatBytes(file.size);
+            uploadBtn.disabled = false;
+        }
+    }
+
+    // Upload with progress tracking using XHR
+    uploadForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(uploadForm);
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+
+        uploadBtn.disabled = true;
+        document.getElementById('uploadBtnText').textContent = 'Uploading...';
+        document.getElementById('uploadSpinner').classList.remove('d-none');
+        progressSection.classList.remove('d-none');
+        uploadZone.classList.add('uploading');
+
+        const totalSize = fileInput.files[0].size;
+        document.getElementById('totalSize').textContent = formatBytes(totalSize);
+
+        xhr.upload.addEventListener('progress', function(e) {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percent + '%';
+                progressBar.textContent = percent + '%';
+
+                document.getElementById('uploadedSize').textContent = formatBytes(e.loaded);
+
+                const elapsed = (Date.now() - startTime) / 1000;
+                const speed = e.loaded / elapsed;
+                document.getElementById('uploadSpeed').textContent = formatBytes(speed) + '/s';
+
+                if (speed > 0) {
+                    const remaining = (e.total - e.loaded) / speed;
+                    document.getElementById('uploadEta').textContent = formatTime(remaining);
+                }
+            }
+        });
+
+        xhr.addEventListener('load', function() {
+            if (xhr.status === 200 || xhr.status === 302) {
+                window.location.reload();
+            } else {
+                alert('Upload failed. Please try again.');
+                resetUploadUI();
+            }
+        });
+
+        xhr.addEventListener('error', function() {
+            alert('Upload failed. Please check your connection.');
+            resetUploadUI();
+        });
+
+        xhr.open('POST', uploadForm.action);
+        xhr.send(formData);
+    });
+
+    function resetUploadUI() {
+        uploadBtn.disabled = false;
+        document.getElementById('uploadBtnText').textContent = '📤 Upload File';
+        document.getElementById('uploadSpinner').classList.add('d-none');
+        uploadZone.classList.remove('uploading');
+    }
+
+    function formatBytes(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function formatTime(seconds) {
+        if (seconds < 60) return Math.round(seconds) + 's';
+        if (seconds < 3600) return Math.round(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
+        return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+    }
+</script>
 </body>
 </html>

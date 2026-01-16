@@ -1,55 +1,37 @@
 package com.example.demo.model;
 
+import jakarta.persistence.*;
+import lombok.*;
 
+import java.time.LocalDateTime;
 
-import org.springframework.web.multipart.MultipartFile;
-
-import javax.persistence.*;
-import java.sql.Blob;
-/**
- * Created by Reza-PC on 7/24/2017.
- */
 @Entity
+@Table(name = "files")
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class Folder {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    Long id;
-    @Column(unique = true)
-    String name;
-    @Column
-    Blob file;
+    private Long id;
 
-    public Folder(){
+    @Column(nullable = false)
+    private String fileName;
 
-    }
+    @Column(nullable = false, unique = true)
+    private String storedFileName;
 
-    public Folder(String name, Blob file) {
-        this.name = name;
-        this.file = file;
-    }
+    private String contentType;
 
-    public Blob getFile() {
-        return file;
-    }
+    private Long fileSize;
 
-    public void setFile(Blob file) {
-        this.file = file;
-    }
+    @Column(updatable = false)
+    private LocalDateTime uploadedAt;
 
-    public String getName() {
-        return name;
-    }
-
-    public void setName(String name) {
-        this.name = name;
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
+    @PrePersist
+    protected void onCreate() {
+        uploadedAt = LocalDateTime.now();
     }
 }
