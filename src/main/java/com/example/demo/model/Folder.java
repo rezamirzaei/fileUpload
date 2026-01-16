@@ -6,7 +6,9 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "files")
+@Table(name = "files", indexes = {
+    @Index(name = "idx_files_user_id", columnList = "user_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -16,6 +18,13 @@ public class Folder {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    /**
+     * Owner of the file - each user can only access their own files.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
     @Column(nullable = false)
     private String fileName;

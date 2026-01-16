@@ -8,6 +8,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -19,7 +21,7 @@ import java.util.Map;
 
 /**
  * Controller for handling large file uploads and downloads.
- * Supports files up to 10GB with streaming.
+ * Supports files up to 10GB with streaming and per-user encryption.
  */
 @Controller
 @RequiredArgsConstructor
@@ -29,7 +31,7 @@ public class UploadController {
     private final FolderService folderService;
 
     @GetMapping("/")
-    public String index(Model model) {
+    public String index(Model model, @AuthenticationPrincipal UserDetails userDetails) {
         List<Folder> files = folderService.getAllFiles();
         FolderService.StorageStats stats = folderService.getStorageStats();
 
@@ -38,6 +40,7 @@ public class UploadController {
         model.addAttribute("totalSize", folderService.formatFileSize(stats.totalSize()));
         model.addAttribute("availableSpace", folderService.formatFileSize(stats.availableSpace()));
         model.addAttribute("encryptionEnabled", stats.encryptionEnabled());
+        model.addAttribute("username", userDetails != null ? userDetails.getUsername() : "Guest");
 
         return "upload";
     }

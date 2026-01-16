@@ -3,13 +3,16 @@ package com.example.demo.service;
 import com.example.demo.exception.FileNotFoundException;
 import com.example.demo.exception.FileStorageException;
 import com.example.demo.model.Folder;
+import com.example.demo.model.User;
 import com.example.demo.repository.FileRepository;
+import com.example.demo.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -24,8 +27,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Service for handling large file uploads using streaming with encryption.
- * When enabled, files are encrypted using AES-256-GCM before storage.
+ * Service for handling large file uploads using streaming with per-user encryption.
+ * Each user has their own encryption key - files are isolated per user.
  */
 @Service
 @RequiredArgsConstructor
@@ -41,6 +44,7 @@ public class FolderService {
     private Path uploadPath;
 
     private final FileRepository fileRepository;
+    private final UserRepository userRepository;
     private final EncryptionService encryptionService;
 
     @PostConstruct
@@ -49,18 +53,29 @@ public class FolderService {
         try {
             Files.createDirectories(uploadPath);
             log.info("Upload directory initialized at: {}", uploadPath);
-            log.info("Encryption is {}", encryptionEnabled ? "ENABLED" : "DISABLED");
+            log.info("Encryption is {}", encryptionEnabled ? "ENABLED (per-user keys)" : "DISABLED");
         } catch (IOException e) {
             throw new FileStorageException("Could not create upload directory", e);
         }
     }
 
     /**
-     * Store a file with encryption - suitable for large files (GB+).
-     * The file is encrypted and streamed directly to disk.
+     * Get the currently authenticated user.
+     */
+    private User getCurrentUser() {
+        String username = SecurityContextHolder.getContext().getAuthentication().getName();
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new IllegalStateException("User not found: " + username));
+    }
+
+    /**
+     * Store a file with per-user encryption.
+     * The file is encrypted using the user's unique key and streamed directly to disk.
      */
     @Transactional
     public Folder storeFile(MultipartFile file) {
+        User currentUser = getCurrentUser();
+
         String originalFileName = StringUtils.cleanPath(
                 file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown"
         );
@@ -71,23 +86,29 @@ public class FolderService {
             throw new FileStorageException("Cannot store empty file: " + originalFileName);
         }
 
-        String storedFileName = UUID.randomUUID() + "_" + originalFileName + (encryptionEnabled ? ".enc" : "");
+        // Include user ID in stored filename for isolation
+        String storedFileName = currentUser.getId() + "_" + UUID.randomUUID() + "_" + originalFileName
+                + (encryptionEnabled ? ".enc" : "");
         Path targetLocation = uploadPath.resolve(storedFileName);
 
         try (InputStream inputStream = file.getInputStream()) {
             if (encryptionEnabled) {
-                encryptionService.encryptToFile(inputStream, targetLocation, file.getSize());
-                log.info("File encrypted and stored: {} -> {}", originalFileName, storedFileName);
+                // Encrypt with user's personal key
+                encryptionService.encryptToFile(inputStream, targetLocation, file.getSize(),
+                        currentUser.getEncryptionKey());
+                log.info("File encrypted with user key and stored: {} -> {} (user={})",
+                        originalFileName, storedFileName, currentUser.getUsername());
             } else {
                 Files.copy(inputStream, targetLocation);
-                log.info("File stored (unencrypted): {} -> {}", originalFileName, storedFileName);
+                log.info("File stored (unencrypted): {} -> {} (user={})",
+                        originalFileName, storedFileName, currentUser.getUsername());
             }
 
             Folder folder = Folder.builder()
+                    .user(currentUser)
                     .fileName(originalFileName)
                     .storedFileName(storedFileName)
                     .contentType(file.getContentType())
-                    // Store original (plaintext) size for correct download Content-Length
                     .fileSize(file.getSize())
                     .build();
 
@@ -102,12 +123,16 @@ public class FolderService {
     }
 
     /**
-     * Load file as a Resource for streaming download (with decryption if needed).
+     * Load file as a Resource for streaming download (with per-user decryption).
+     * User can only download their own files.
      */
     @Transactional(readOnly = true)
     public Resource loadFileAsResource(Long id) {
-        Folder folder = fileRepository.findById(id)
-                .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
+        User currentUser = getCurrentUser();
+
+        // Find file that belongs to current user
+        Folder folder = fileRepository.findByIdAndUser(id, currentUser)
+                .orElseThrow(() -> new FileNotFoundException("File not found or access denied"));
 
         Path filePath = uploadPath.resolve(folder.getStoredFileName()).normalize();
 
@@ -116,12 +141,12 @@ public class FolderService {
         }
 
         try {
-            boolean isEncryptedFile = folder.getStoredFileName() != null && folder.getStoredFileName().endsWith(".enc");
+            boolean isEncryptedFile = folder.getStoredFileName() != null
+                    && folder.getStoredFileName().endsWith(".enc");
             if (isEncryptedFile) {
-                if (!encryptionEnabled) {
-                    throw new FileStorageException("Encrypted file present but encryption is disabled. Enable encryption to download.");
-                }
-                InputStream decryptedStream = encryptionService.decryptFromFile(filePath);
+                // Decrypt with user's personal key
+                InputStream decryptedStream = encryptionService.decryptFromFile(filePath,
+                        currentUser.getEncryptionKey());
                 return new InputStreamResource(decryptedStream);
             }
 
@@ -131,41 +156,54 @@ public class FolderService {
         }
     }
 
+    /**
+     * Get file by ID - only returns file if it belongs to current user.
+     */
     @Transactional(readOnly = true)
     public Folder getFileById(Long id) {
-        return fileRepository.findById(id)
-                .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
+        User currentUser = getCurrentUser();
+        return fileRepository.findByIdAndUser(id, currentUser)
+                .orElseThrow(() -> new FileNotFoundException("File not found or access denied"));
     }
 
+    /**
+     * Get all files belonging to the current user.
+     */
     @Transactional(readOnly = true)
     public List<Folder> getAllFiles() {
-        return fileRepository.findAll();
+        User currentUser = getCurrentUser();
+        return fileRepository.findByUserOrderByUploadedAtDesc(currentUser);
     }
 
+    /**
+     * Delete file - user can only delete their own files.
+     */
     @Transactional
     public void deleteFile(Long id) {
-        Folder folder = fileRepository.findById(id)
-                .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
+        User currentUser = getCurrentUser();
+
+        Folder folder = fileRepository.findByIdAndUser(id, currentUser)
+                .orElseThrow(() -> new FileNotFoundException("File not found or access denied"));
 
         try {
             Path filePath = uploadPath.resolve(folder.getStoredFileName());
             Files.deleteIfExists(filePath);
             fileRepository.delete(folder);
-            log.info("File deleted successfully: {}", folder.getFileName());
+            log.info("File deleted: {} (user={})", folder.getFileName(), currentUser.getUsername());
         } catch (IOException e) {
             throw new FileStorageException("Could not delete file: " + folder.getFileName(), e);
         }
     }
 
     /**
-     * Get storage statistics.
+     * Get storage statistics for the current user.
      */
     public StorageStats getStorageStats() {
+        User currentUser = getCurrentUser();
+
         try {
-            long totalFiles = fileRepository.count();
-            long totalSize = fileRepository.findAll().stream()
-                    .mapToLong(f -> f.getFileSize() != null ? f.getFileSize() : 0)
-                    .sum();
+            long totalFiles = fileRepository.countByUser(currentUser);
+            long totalSize = fileRepository.sumFileSizeByUser(currentUser);
             long availableSpace = Files.getFileStore(uploadPath).getUsableSpace();
 
             return new StorageStats(totalFiles, totalSize, availableSpace, encryptionEnabled);

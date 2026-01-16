@@ -1,9 +1,7 @@
 package com.example.demo.service;
 
 import com.example.demo.exception.FileStorageException;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.crypto.Cipher;
@@ -22,9 +20,7 @@ import java.util.Base64;
 
 /**
  * Service for encrypting and decrypting files using AES-256-GCM.
- * AES-GCM provides both confidentiality and integrity protection.
- *
- * IMPORTANT: You must configure a persistent key via `encryption.secret-key` (Base64, 32 bytes).
+ * Supports per-user encryption keys for multi-tenant isolation.
  */
 @Service
 @Slf4j
@@ -36,47 +32,40 @@ public class EncryptionService {
     private static final int GCM_TAG_LENGTH = 128; // 128 bits authentication tag
     private static final int BUFFER_SIZE = 8192; // 8KB buffer for streaming
 
-    @Value("${encryption.secret-key:}")
-    private String configuredSecretKey;
-
-    private SecretKey secretKey;
-
-    @PostConstruct
-    public void init() {
-        if (configuredSecretKey == null || configuredSecretKey.isBlank()) {
-            // Fail fast: silently generating a new key makes existing encrypted files unrecoverable after restart.
-            throw new IllegalStateException(
-                    "Missing encryption key. Set 'encryption.secret-key' (Base64 32 bytes) " +
-                            "or provide ENCRYPTION_SECRET_KEY environment variable."
-            );
-        }
-
+    /**
+     * Create a SecretKey from a Base64-encoded key string.
+     */
+    public SecretKey createSecretKey(String base64Key) {
         try {
-            byte[] decodedKey = Base64.getDecoder().decode(configuredSecretKey.trim());
+            byte[] decodedKey = Base64.getDecoder().decode(base64Key.trim());
             if (decodedKey.length != 32) {
                 throw new IllegalArgumentException(
                         "Secret key must decode to exactly 32 bytes (256 bits) for AES-256-GCM."
                 );
             }
-            secretKey = new SecretKeySpec(decodedKey, ALGORITHM);
-            log.info("Encryption initialized (AES-256-GCM)");
+            return new SecretKeySpec(decodedKey, ALGORITHM);
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
-            throw new IllegalStateException("Invalid encryption key format. Expected Base64-encoded 32 bytes.", e);
+            throw new IllegalStateException("Invalid encryption key format.", e);
         }
     }
 
     /**
-     * Encrypt an input stream and write to a file.
-     * The IV is prepended to the file for decryption.
-     *
-     * @param inputStream Source data stream
-     * @param targetPath  Target encrypted file path
-     * @param expectedSize Expected size for progress logging
-     * @return Number of plaintext bytes processed
+     * Generate a new random AES-256 key (for new user registration).
      */
-    public long encryptToFile(InputStream inputStream, Path targetPath, long expectedSize) {
+    public String generateNewKey() {
+        byte[] key = new byte[32]; // 256 bits
+        new SecureRandom().nextBytes(key);
+        return Base64.getEncoder().encodeToString(key);
+    }
+
+    /**
+     * Encrypt an input stream and write to a file using the provided user key.
+     */
+    public long encryptToFile(InputStream inputStream, Path targetPath, long expectedSize, String userKey) {
+        SecretKey secretKey = createSecretKey(userKey);
+
         try {
             // Generate random IV for each file
             byte[] iv = new byte[GCM_IV_LENGTH];
@@ -129,10 +118,11 @@ public class EncryptionService {
     }
 
     /**
-     * Create a decrypting input stream from an encrypted file.
-     * Reads the IV from the beginning of the file.
+     * Create a decrypting input stream from an encrypted file using the provided user key.
      */
-    public InputStream decryptFromFile(Path encryptedFilePath) {
+    public InputStream decryptFromFile(Path encryptedFilePath, String userKey) {
+        SecretKey secretKey = createSecretKey(userKey);
+
         try {
             InputStream fileInputStream = Files.newInputStream(encryptedFilePath);
 

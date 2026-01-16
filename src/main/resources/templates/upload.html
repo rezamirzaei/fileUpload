@@ -40,13 +40,18 @@
             <span class="me-2">📁</span>Large File Upload Manager
         </a>
         <div class="d-flex align-items-center">
-            <span th:if="${encryptionEnabled}" class="badge bg-success me-3" title="Files are encrypted with AES-256-GCM">
-                🔒 Encrypted
+            <span th:if="${encryptionEnabled}" class="badge bg-success me-3" title="Files encrypted with your personal AES-256 key">
+                🔒 Per-User Encryption
             </span>
             <span th:unless="${encryptionEnabled}" class="badge bg-warning me-3" title="Encryption is disabled">
                 🔓 Unencrypted
             </span>
-            <span class="navbar-text text-white-50">Supports files up to 10GB</span>
+            <span class="navbar-text text-white-50 me-3">
+                👤 <span th:text="${username}">User</span>
+            </span>
+            <form th:action="@{/logout}" method="post" class="d-inline">
+                <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
+            </form>
         </div>
     </div>
 </nav>
@@ -57,7 +62,7 @@
         <div class="col-md-4">
             <div class="card stats-card text-white">
                 <div class="card-body">
-                    <h6 class="text-white-50">Total Files</h6>
+                    <h6 class="text-white-50">My Files</h6>
                     <h3 th:text="${totalFiles}">0</h3>
                 </div>
             </div>
@@ -65,7 +70,7 @@
         <div class="col-md-4">
             <div class="card stats-card text-white">
                 <div class="card-body">
-                    <h6 class="text-white-50">Storage Used</h6>
+                    <h6 class="text-white-50">My Storage Used</h6>
                     <h3 th:text="${totalSize}">0 B</h3>
                 </div>
             </div>

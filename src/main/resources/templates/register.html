@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - File Upload</title>
+    <link rel="stylesheet" href="/webjars/bootstrap/5.3.3/css/bootstrap.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 0;
+        }
+        .register-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 40px;
+            max-width: 450px;
+            width: 100%;
+        }
+        .register-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .register-header h2 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .register-header p {
+            color: #666;
+        }
+        .form-control {
+            padding: 12px 15px;
+            border-radius: 8px;
+        }
+        .form-control.is-invalid {
+            border-color: #dc3545;
+        }
+        .btn-primary {
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: 600;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%);
+        }
+        .icon-user {
+            font-size: 50px;
+            margin-bottom: 15px;
+        }
+        .password-strength {
+            height: 5px;
+            margin-top: 5px;
+            border-radius: 3px;
+            transition: all 0.3s;
+        }
+        .feature-list {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .feature-list li {
+            padding: 5px 0;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="register-card">
+        <div class="register-header">
+            <div class="icon-user">👤</div>
+            <h2>Create Account</h2>
+            <p class="text-muted">Get your own secure file storage</p>
+        </div>
+
+        <form th:action="@{/register}" th:object="${registerForm}" method="post">
+            <!-- Global error (must be inside form) -->
+            <div th:if="${#fields.hasGlobalErrors()}" class="alert alert-danger">
+                <span th:each="err : ${#fields.globalErrors()}" th:text="${err}"></span>
+            </div>
+
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" th:field="*{username}"
+                       th:classappend="${#fields.hasErrors('username')} ? 'is-invalid'"
+                       placeholder="Choose a username" required>
+                <div class="invalid-feedback" th:if="${#fields.hasErrors('username')}" th:errors="*{username}"></div>
+            </div>
+
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" th:field="*{email}"
+                       th:classappend="${#fields.hasErrors('email')} ? 'is-invalid'"
+                       placeholder="your@email.com" required>
+                <div class="invalid-feedback" th:if="${#fields.hasErrors('email')}" th:errors="*{email}"></div>
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" th:field="*{password}"
+                       th:classappend="${#fields.hasErrors('password')} ? 'is-invalid'"
+                       placeholder="At least 6 characters" required>
+                <div class="invalid-feedback" th:if="${#fields.hasErrors('password')}" th:errors="*{password}"></div>
+                <div id="passwordStrength" class="password-strength"></div>
+            </div>
+
+            <div class="mb-4">
+                <label for="confirmPassword" class="form-label">Confirm Password</label>
+                <input type="password" class="form-control" id="confirmPassword" th:field="*{confirmPassword}"
+                       th:classappend="${#fields.hasErrors('confirmPassword')} ? 'is-invalid'"
+                       placeholder="Repeat your password" required>
+                <div class="invalid-feedback" th:if="${#fields.hasErrors('confirmPassword')}" th:errors="*{confirmPassword}"></div>
+            </div>
+
+            <button type="submit" class="btn btn-primary w-100 mb-3">
+                Create Account
+            </button>
+        </form>
+
+        <div class="text-center mt-3">
+            <p class="text-muted mb-0">Already have an account?</p>
+            <a th:href="@{/login}" class="fw-bold">Sign In</a>
+        </div>
+
+        <div class="feature-list">
+            <p class="fw-bold mb-2">🎉 What you get:</p>
+            <ul class="list-unstyled mb-0">
+                <li>✅ Personal encryption key (AES-256)</li>
+                <li>✅ Upload files up to 10GB</li>
+                <li>✅ Files encrypted at rest</li>
+                <li>✅ HTTPS encrypted transfer</li>
+                <li>✅ Only you can access your files</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Password strength indicator
+        document.getElementById('password').addEventListener('input', function() {
+            const password = this.value;
+            const strengthBar = document.getElementById('passwordStrength');
+            let strength = 0;
+
+            if (password.length >= 6) strength++;
+            if (password.length >= 10) strength++;
+            if (/[A-Z]/.test(password)) strength++;
+            if (/[0-9]/.test(password)) strength++;
+            if (/[^A-Za-z0-9]/.test(password)) strength++;
+
+            const colors = ['#dc3545', '#fd7e14', '#ffc107', '#28a745', '#20c997'];
+            const widths = ['20%', '40%', '60%', '80%', '100%'];
+
+            if (password.length > 0) {
+                strengthBar.style.width = widths[Math.min(strength, 4)];
+                strengthBar.style.backgroundColor = colors[Math.min(strength, 4)];
+            } else {
+                strengthBar.style.width = '0';
+            }
+        });
+    </script>
+</body>
+</html>
