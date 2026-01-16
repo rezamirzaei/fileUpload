@@ -1,10 +1,12 @@
 package com.example.demo;
 
 import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
-@EnableAutoConfiguration
+/**
+ * Main application class for Large File Upload Service.
+ * Supports streaming uploads up to 10GB.
+ */
 @SpringBootApplication
 public class FileUploadApplication {
 

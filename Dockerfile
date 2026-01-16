@@ -48,6 +48,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # JVM settings optimized for large file uploads:
 # - Xmx2g: Max heap size (adjust based on your server)
 # - XX:+UseG1GC: G1 garbage collector for better large allocation handling
+# - XX:MaxDirectMemorySize: For NIO operations during large file transfers
+ENTRYPOINT ["java", \
+    "-Xms512m", \
+    "-Xmx2g", \
+    "-XX:+UseG1GC", \
+    "-XX:MaxDirectMemorySize=512m", \
+    "-Djava.security.egd=file:/dev/./urandom", \
+    "-jar", \
+    "app.jar"]
 # - XX:MaxDirectMemorySize: For NIO operations
 ENV JAVA_OPTS="-Xms512m -Xmx2g -XX:+UseG1GC -XX:MaxDirectMemorySize=512m"
 

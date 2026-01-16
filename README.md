@@ -84,7 +84,7 @@ CREATE DATABASE fileupload;
 ```
 src/main/java/com/example/demo/
 ├── FileUploadApplication.java      # Main application
-├── Controller/
+├── controller/
 │   └── UploadController.java       # Web & API endpoints
 ├── model/
 │   └── Folder.java                 # JPA entity for file metadata
