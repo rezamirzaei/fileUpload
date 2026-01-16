@@ -1,21 +1,17 @@
 # Multi-stage build for optimized image
 
-# Stage 1: Build
-FROM eclipse-temurin:21-jdk-alpine AS builder
+# Stage 1: Build with Maven
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 
 WORKDIR /app
 
-# Copy Maven wrapper and pom.xml
+# Copy pom.xml and download dependencies
 COPY pom.xml .
-COPY mvnw .
-COPY .mvn .mvn
-
-# Make mvnw executable and download dependencies
-RUN chmod +x mvnw && ./mvnw dependency:go-offline -B
+RUN mvn dependency:go-offline -B
 
 # Copy source and build
 COPY src src
-RUN ./mvnw clean package -DskipTests
+RUN mvn clean package -DskipTests
 
 # Stage 2: Runtime - optimized for large file handling
 FROM eclipse-temurin:21-jre-alpine
@@ -45,19 +41,7 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8080/actuator/health || exit 1
 
-# JVM settings optimized for large file uploads:
-# - Xmx2g: Max heap size (adjust based on your server)
-# - XX:+UseG1GC: G1 garbage collector for better large allocation handling
-# - XX:MaxDirectMemorySize: For NIO operations during large file transfers
-ENTRYPOINT ["java", \
-    "-Xms512m", \
-    "-Xmx2g", \
-    "-XX:+UseG1GC", \
-    "-XX:MaxDirectMemorySize=512m", \
-    "-Djava.security.egd=file:/dev/./urandom", \
-    "-jar", \
-    "app.jar"]
-# - XX:MaxDirectMemorySize: For NIO operations
+# JVM settings optimized for large file uploads
 ENV JAVA_OPTS="-Xms512m -Xmx2g -XX:+UseG1GC -XX:MaxDirectMemorySize=512m"
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
