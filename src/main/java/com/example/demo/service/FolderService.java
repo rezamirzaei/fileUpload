@@ -25,7 +25,7 @@ import java.util.UUID;
 
 /**
  * Service for handling large file uploads using streaming with encryption.
- * Files are encrypted using AES-256-GCM before storage.
+ * When enabled, files are encrypted using AES-256-GCM before storage.
  */
 @Service
 @RequiredArgsConstructor
@@ -71,40 +71,32 @@ public class FolderService {
             throw new FileStorageException("Cannot store empty file: " + originalFileName);
         }
 
-        // Add .enc extension for encrypted files
-        String storedFileName = UUID.randomUUID() + "_" + originalFileName +
-                (encryptionEnabled ? ".enc" : "");
+        String storedFileName = UUID.randomUUID() + "_" + originalFileName + (encryptionEnabled ? ".enc" : "");
         Path targetLocation = uploadPath.resolve(storedFileName);
 
-        try {
-            long fileSize;
-
+        try (InputStream inputStream = file.getInputStream()) {
             if (encryptionEnabled) {
-                // Encrypt and store
-                fileSize = encryptionService.encryptToFile(
-                        file.getInputStream(), targetLocation, file.getSize());
-                log.info("File encrypted and stored: {} -> {} ({} bytes)",
-                        originalFileName, storedFileName, fileSize);
+                encryptionService.encryptToFile(inputStream, targetLocation, file.getSize());
+                log.info("File encrypted and stored: {} -> {}", originalFileName, storedFileName);
             } else {
-                // Store without encryption (legacy mode)
-                fileSize = Files.copy(file.getInputStream(), targetLocation);
-                log.info("File stored (unencrypted): {} -> {} ({} bytes)",
-                        originalFileName, storedFileName, fileSize);
+                Files.copy(inputStream, targetLocation);
+                log.info("File stored (unencrypted): {} -> {}", originalFileName, storedFileName);
             }
 
             Folder folder = Folder.builder()
                     .fileName(originalFileName)
                     .storedFileName(storedFileName)
                     .contentType(file.getContentType())
-                    .fileSize(file.getSize()) // Store original size, not encrypted size
+                    // Store original (plaintext) size for correct download Content-Length
+                    .fileSize(file.getSize())
                     .build();
 
             return fileRepository.save(folder);
         } catch (IOException e) {
-            // Clean up partial file on failure
             try {
                 Files.deleteIfExists(targetLocation);
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) {
+            }
             throw new FileStorageException("Could not store file: " + originalFileName, e);
         }
     }
@@ -124,14 +116,16 @@ public class FolderService {
         }
 
         try {
-            if (folder.getStoredFileName().endsWith(".enc")) {
-                // Return decrypting stream
+            boolean isEncryptedFile = folder.getStoredFileName() != null && folder.getStoredFileName().endsWith(".enc");
+            if (isEncryptedFile) {
+                if (!encryptionEnabled) {
+                    throw new FileStorageException("Encrypted file present but encryption is disabled. Enable encryption to download.");
+                }
                 InputStream decryptedStream = encryptionService.decryptFromFile(filePath);
                 return new InputStreamResource(decryptedStream);
-            } else {
-                // Return regular file stream (for unencrypted legacy files)
-                return new InputStreamResource(Files.newInputStream(filePath));
             }
+
+            return new InputStreamResource(Files.newInputStream(filePath));
         } catch (IOException e) {
             throw new FileStorageException("Could not read file: " + folder.getFileName(), e);
         }
@@ -194,9 +188,6 @@ public class FolderService {
         return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
     }
 
-    public boolean isEncryptionEnabled() {
-        return encryptionEnabled;
+    public record StorageStats(long totalFiles, long totalSize, long availableSpace, boolean encryptionEnabled) {
     }
-
-    public record StorageStats(long totalFiles, long totalSize, long availableSpace, boolean encryptionEnabled) {}
 }

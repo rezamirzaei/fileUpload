@@ -12,7 +12,10 @@ import org.springframework.test.context.TestPropertySource;
         "spring.datasource.password=",
         "spring.jpa.hibernate.ddl-auto=create-drop",
         "spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.H2Dialect",
-        "file.upload-dir=./test-uploads"
+        "file.upload-dir=./test-uploads",
+        "encryption.enabled=true",
+        // Base64 for 32 bytes: 000102...1f
+        "encryption.secret-key=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8="
 })
 class FileUploadApplicationTests {
 
