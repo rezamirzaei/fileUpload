@@ -8,8 +8,8 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.InputStreamResource;
 import org.springframework.core.io.Resource;
-import org.springframework.core.io.UrlResource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -17,32 +17,31 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.MalformedURLException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Service for handling large file uploads using streaming.
- * Files are streamed directly to disk without loading into memory.
+ * Service for handling large file uploads using streaming with encryption.
+ * Files are encrypted using AES-256-GCM before storage.
  */
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class FolderService {
 
-    private static final int BUFFER_SIZE = 8192; // 8KB buffer for streaming
-
     @Value("${file.upload-dir}")
     private String uploadDir;
+
+    @Value("${encryption.enabled:true}")
+    private boolean encryptionEnabled;
 
     private Path uploadPath;
 
     private final FileRepository fileRepository;
+    private final EncryptionService encryptionService;
 
     @PostConstruct
     public void init() {
@@ -50,14 +49,15 @@ public class FolderService {
         try {
             Files.createDirectories(uploadPath);
             log.info("Upload directory initialized at: {}", uploadPath);
+            log.info("Encryption is {}", encryptionEnabled ? "ENABLED" : "DISABLED");
         } catch (IOException e) {
             throw new FileStorageException("Could not create upload directory", e);
         }
     }
 
     /**
-     * Store a file using streaming - suitable for large files (GB+).
-     * The file is streamed directly to disk without loading into memory.
+     * Store a file with encryption - suitable for large files (GB+).
+     * The file is encrypted and streamed directly to disk.
      */
     @Transactional
     public Folder storeFile(MultipartFile file) {
@@ -71,21 +71,32 @@ public class FolderService {
             throw new FileStorageException("Cannot store empty file: " + originalFileName);
         }
 
-        String storedFileName = UUID.randomUUID() + "_" + originalFileName;
+        // Add .enc extension for encrypted files
+        String storedFileName = UUID.randomUUID() + "_" + originalFileName +
+                (encryptionEnabled ? ".enc" : "");
         Path targetLocation = uploadPath.resolve(storedFileName);
 
         try {
-            // Stream file directly to disk with progress logging
-            long fileSize = streamToFile(file.getInputStream(), targetLocation, file.getSize());
+            long fileSize;
 
-            log.info("File stored successfully: {} -> {} ({} bytes)",
-                    originalFileName, storedFileName, fileSize);
+            if (encryptionEnabled) {
+                // Encrypt and store
+                fileSize = encryptionService.encryptToFile(
+                        file.getInputStream(), targetLocation, file.getSize());
+                log.info("File encrypted and stored: {} -> {} ({} bytes)",
+                        originalFileName, storedFileName, fileSize);
+            } else {
+                // Store without encryption (legacy mode)
+                fileSize = Files.copy(file.getInputStream(), targetLocation);
+                log.info("File stored (unencrypted): {} -> {} ({} bytes)",
+                        originalFileName, storedFileName, fileSize);
+            }
 
             Folder folder = Folder.builder()
                     .fileName(originalFileName)
                     .storedFileName(storedFileName)
                     .contentType(file.getContentType())
-                    .fileSize(fileSize)
+                    .fileSize(file.getSize()) // Store original size, not encrypted size
                     .build();
 
             return fileRepository.save(folder);
@@ -99,57 +110,30 @@ public class FolderService {
     }
 
     /**
-     * Stream input to file with buffered writing - memory efficient for large files.
-     */
-    private long streamToFile(InputStream inputStream, Path targetPath, long expectedSize) throws IOException {
-        long totalBytes = 0;
-        long lastLoggedPercent = 0;
-
-        try (OutputStream outputStream = Files.newOutputStream(targetPath,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)) {
-
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead;
-
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-                totalBytes += bytesRead;
-
-                // Log progress every 10% for large files
-                if (expectedSize > 0) {
-                    long percent = (totalBytes * 100) / expectedSize;
-                    if (percent >= lastLoggedPercent + 10) {
-                        log.debug("Upload progress: {}% ({} / {} bytes)",
-                                percent, totalBytes, expectedSize);
-                        lastLoggedPercent = percent;
-                    }
-                }
-            }
-            outputStream.flush();
-        }
-
-        return totalBytes;
-    }
-
-    /**
-     * Load file as a Resource for streaming download.
+     * Load file as a Resource for streaming download (with decryption if needed).
      */
     @Transactional(readOnly = true)
     public Resource loadFileAsResource(Long id) {
         Folder folder = fileRepository.findById(id)
                 .orElseThrow(() -> new FileNotFoundException("File not found with id: " + id));
 
-        try {
-            Path filePath = uploadPath.resolve(folder.getStoredFileName()).normalize();
-            Resource resource = new UrlResource(filePath.toUri());
+        Path filePath = uploadPath.resolve(folder.getStoredFileName()).normalize();
 
-            if (resource.exists() && resource.isReadable()) {
-                return resource;
+        if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
+            throw new FileNotFoundException("File not found: " + folder.getFileName());
+        }
+
+        try {
+            if (folder.getStoredFileName().endsWith(".enc")) {
+                // Return decrypting stream
+                InputStream decryptedStream = encryptionService.decryptFromFile(filePath);
+                return new InputStreamResource(decryptedStream);
             } else {
-                throw new FileNotFoundException("File not found: " + folder.getFileName());
+                // Return regular file stream (for unencrypted legacy files)
+                return new InputStreamResource(Files.newInputStream(filePath));
             }
-        } catch (MalformedURLException e) {
-            throw new FileNotFoundException("File not found: " + folder.getFileName(), e);
+        } catch (IOException e) {
+            throw new FileStorageException("Could not read file: " + folder.getFileName(), e);
         }
     }
 
@@ -190,10 +174,10 @@ public class FolderService {
                     .sum();
             long availableSpace = Files.getFileStore(uploadPath).getUsableSpace();
 
-            return new StorageStats(totalFiles, totalSize, availableSpace);
+            return new StorageStats(totalFiles, totalSize, availableSpace, encryptionEnabled);
         } catch (IOException e) {
             log.error("Error getting storage stats", e);
-            return new StorageStats(0, 0, 0);
+            return new StorageStats(0, 0, 0, encryptionEnabled);
         }
     }
 
@@ -210,5 +194,9 @@ public class FolderService {
         return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
     }
 
-    public record StorageStats(long totalFiles, long totalSize, long availableSpace) {}
+    public boolean isEncryptionEnabled() {
+        return encryptionEnabled;
+    }
+
+    public record StorageStats(long totalFiles, long totalSize, long availableSpace, boolean encryptionEnabled) {}
 }

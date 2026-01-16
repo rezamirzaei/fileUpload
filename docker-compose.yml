@@ -10,6 +10,11 @@ services:
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=rootpassword
       - FILE_UPLOAD_DIR=/app/uploads
+      # Encryption settings (AES-256-GCM)
+      # Generate a new key with: openssl rand -base64 32
+      # IMPORTANT: Keep this key safe! Without it, encrypted files cannot be recovered!
+      - ENCRYPTION_ENABLED=true
+      - ENCRYPTION_SECRET_KEY=${ENCRYPTION_SECRET_KEY:-}
       # JVM settings for large file handling (adjust based on available memory)
       - JAVA_OPTS=-Xms512m -Xmx4g -XX:+UseG1GC -XX:MaxDirectMemorySize=1g
     depends_on:

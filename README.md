@@ -1,18 +1,26 @@
 # Large File Upload Application
 
-A modern Spring Boot 3.2 application designed for **uploading large files (up to 10GB)** with streaming support, progress tracking, and Docker deployment.
+A modern Spring Boot 3.2 application designed for **uploading large files (up to 10GB)** with streaming support, **AES-256 encryption**, progress tracking, and Docker deployment.
 
 ## ✨ Features
 
 - 📤 **Large File Upload** - Supports files up to 10GB
+- 🔒 **AES-256-GCM Encryption** - Files encrypted at rest for security
 - 🌊 **Streaming Upload** - Files stream directly to disk, no memory buffering
 - 📊 **Real-time Progress** - Upload progress bar with speed and ETA
 - 🎯 **Drag & Drop** - Modern drag-and-drop UI
-- ⬇️ **Download Files** - Stream downloads with resume support
+- ⬇️ **Download Files** - Stream downloads with automatic decryption
 - 🗑️ **Delete Files** - Remove files with one click
 - 🐳 **Docker Ready** - Full Docker & Docker Compose support
 - 💾 **Persistent Storage** - Files survive container restarts
 - 📈 **Storage Stats** - View total files, storage used, and available space
+
+## 🔐 Security Features
+
+- **AES-256-GCM encryption** - Military-grade encryption for files at rest
+- **Unique IV per file** - Each file uses a unique initialization vector
+- **Authentication tag** - Ensures file integrity (detects tampering)
+- **Configurable secret key** - Set via environment variable for production
 
 ## 🛠️ Tech Stack
 
@@ -26,6 +34,10 @@ A modern Spring Boot 3.2 application designed for **uploading large files (up to
 ## 🚀 Quick Start with Docker
 
 ```bash
+# Generate an encryption key (IMPORTANT: save this!)
+export ENCRYPTION_SECRET_KEY=$(openssl rand -base64 32)
+echo "Save this key: $ENCRYPTION_SECRET_KEY"
+
 # Clone and start
 git clone <repository-url>
 cd fileUpload
@@ -54,6 +66,33 @@ docker-compose logs -f app
 # Rebuild after code changes
 docker-compose up --build
 ```
+
+## 🔑 Encryption Configuration
+
+### Generate a Secret Key
+```bash
+openssl rand -base64 32
+```
+
+### Set the Key
+**Option 1: Environment variable**
+```bash
+export ENCRYPTION_SECRET_KEY=your-base64-encoded-32-byte-key
+docker-compose up
+```
+
+**Option 2: In docker-compose.yml**
+```yaml
+environment:
+  - ENCRYPTION_SECRET_KEY=your-base64-encoded-32-byte-key
+```
+
+**Option 3: In application.properties (for local dev)**
+```properties
+encryption.secret-key=your-base64-encoded-32-byte-key
+```
+
+⚠️ **WARNING**: Without the secret key, encrypted files cannot be recovered!
 
 ## 💻 Local Development
 

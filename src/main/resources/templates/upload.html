@@ -39,7 +39,15 @@
         <a class="navbar-brand" href="/">
             <span class="me-2">📁</span>Large File Upload Manager
         </a>
-        <span class="navbar-text text-white-50">Supports files up to 10GB</span>
+        <div class="d-flex align-items-center">
+            <span th:if="${encryptionEnabled}" class="badge bg-success me-3" title="Files are encrypted with AES-256-GCM">
+                🔒 Encrypted
+            </span>
+            <span th:unless="${encryptionEnabled}" class="badge bg-warning me-3" title="Encryption is disabled">
+                🔓 Unencrypted
+            </span>
+            <span class="navbar-text text-white-50">Supports files up to 10GB</span>
+        </div>
     </div>
 </nav>
 

@@ -37,6 +37,7 @@ public class UploadController {
         model.addAttribute("totalFiles", stats.totalFiles());
         model.addAttribute("totalSize", folderService.formatFileSize(stats.totalSize()));
         model.addAttribute("availableSpace", folderService.formatFileSize(stats.availableSpace()));
+        model.addAttribute("encryptionEnabled", stats.encryptionEnabled());
 
         return "upload";
     }
