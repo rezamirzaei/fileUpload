@@ -69,30 +69,31 @@ docker-compose up --build
 
 ## 🔑 Encryption Configuration
 
-### Generate a Secret Key
+### Quick Setup
 ```bash
-openssl rand -base64 32
+# 1. Copy the example env file
+cp .env.example .env
+
+# 2. Generate and add your encryption key
+echo "ENCRYPTION_SECRET_KEY=$(openssl rand -base64 32)" >> .env
+
+# 3. Start the application
+docker-compose up --build
 ```
 
-### Set the Key
-**Option 1: Environment variable**
-```bash
-export ENCRYPTION_SECRET_KEY=your-base64-encoded-32-byte-key
-docker-compose up
+### Where is the Key Stored?
+The key is stored in `.env` file (not committed to git). Example:
+```
+ENCRYPTION_SECRET_KEY=K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=
 ```
 
-**Option 2: In docker-compose.yml**
-```yaml
-environment:
-  - ENCRYPTION_SECRET_KEY=your-base64-encoded-32-byte-key
-```
+### Backup Your Key!
+**Store your key in a safe place:**
+- Password manager (1Password, Bitwarden, etc.)
+- Secure notes
+- Encrypted backup
 
-**Option 3: In application.properties (for local dev)**
-```properties
-encryption.secret-key=your-base64-encoded-32-byte-key
-```
-
-⚠️ **WARNING**: Without the secret key, encrypted files cannot be recovered!
+⚠️ **WARNING**: Without the secret key, encrypted files **cannot be recovered**!
 
 ## 💻 Local Development
 
