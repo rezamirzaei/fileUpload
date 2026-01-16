@@ -1,11 +1,12 @@
 # Large File Upload Application
 
-A modern Spring Boot 3.2 application designed for **uploading large files (up to 10GB)** with streaming support, **AES-256 encryption**, progress tracking, and Docker deployment.
+A modern Spring Boot 3.2 application designed for **uploading large files (up to 10GB)** with streaming support, **AES-256 encryption at rest**, **HTTPS encryption in transit**, progress tracking, and Docker deployment.
 
 ## ✨ Features
 
 - 📤 **Large File Upload** - Supports files up to 10GB
 - 🔒 **AES-256-GCM Encryption** - Files encrypted at rest for security
+- 🔐 **HTTPS/TLS** - Data encrypted in transit (SSL/TLS)
 - 🌊 **Streaming Upload** - Files stream directly to disk, no memory buffering
 - 📊 **Real-time Progress** - Upload progress bar with speed and ETA
 - 🎯 **Drag & Drop** - Modern drag-and-drop UI
@@ -17,7 +18,14 @@ A modern Spring Boot 3.2 application designed for **uploading large files (up to
 
 ## 🔐 Security Features
 
-- **AES-256-GCM encryption** - Military-grade encryption for files at rest
+### Encryption in Transit (HTTPS/TLS)
+- **TLS 1.2/1.3** - Modern protocols only
+- **Strong ciphers** - AES-GCM, ChaCha20-Poly1305
+- **HTTP→HTTPS redirect** - All traffic encrypted
+- **Nginx reverse proxy** - Handles TLS termination
+
+### Encryption at Rest (AES-256-GCM)
+- **AES-256-GCM encryption** - Military-grade encryption for files
 - **Unique IV per file** - Each file uses a unique initialization vector
 - **Authentication tag** - Ensures file integrity (detects tampering)
 - **Configurable secret key** - Set via environment variable for production
@@ -28,6 +36,7 @@ A modern Spring Boot 3.2 application designed for **uploading large files (up to
 - **Spring Boot 3.2.5**
 - **Spring Data JPA**
 - **MySQL 8.0**
+- **Nginx** (HTTPS reverse proxy)
 - **Thymeleaf + Bootstrap 5**
 - **Docker & Docker Compose**
 
@@ -37,6 +46,9 @@ A modern Spring Boot 3.2 application designed for **uploading large files (up to
 # Generate an encryption key (IMPORTANT: save this!)
 export ENCRYPTION_SECRET_KEY=$(openssl rand -base64 32)
 echo "Save this key: $ENCRYPTION_SECRET_KEY"
+
+# Generate SSL certificates (for development)
+./generate-ssl-cert.sh
 
 # Clone and start
 git clone <repository-url>
@@ -49,7 +61,9 @@ docker-compose up --build
 docker-compose up -d --build
 ```
 
-**Access the application:** http://localhost:8080
+**Access the application:** 
+- 🔒 **HTTPS:** https://localhost (recommended)
+- 🔓 HTTP: http://localhost (redirects to HTTPS)
 
 ### Docker Commands
 
@@ -77,7 +91,10 @@ cp .env.example .env
 # 2. Generate and add your encryption key
 echo "ENCRYPTION_SECRET_KEY=$(openssl rand -base64 32)" >> .env
 
-# 3. Start the application
+# 3. Generate SSL certificates
+./generate-ssl-cert.sh
+
+# 4. Start the application
 docker-compose up --build
 ```
 
@@ -94,6 +111,25 @@ ENCRYPTION_SECRET_KEY=K7gNU3sdo+OL0wNhqoVWhr3g6s1xYv72ol/pe/Unols=
 - Encrypted backup
 
 ⚠️ **WARNING**: Without the secret key, encrypted files **cannot be recovered**!
+
+## 🔐 SSL/TLS Certificates
+
+### For Development (Self-Signed)
+```bash
+./generate-ssl-cert.sh
+```
+Browser will show a security warning - click "Advanced" → "Proceed" (this is normal for self-signed certs).
+
+### For Production (Let's Encrypt)
+Replace the certificates in `nginx/certs/` with real certificates:
+```bash
+# Using certbot
+certbot certonly --standalone -d yourdomain.com
+
+# Copy certificates
+cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem nginx/certs/server.crt
+cp /etc/letsencrypt/live/yourdomain.com/privkey.pem nginx/certs/server.key
+```
 
 ## 💻 Local Development
 

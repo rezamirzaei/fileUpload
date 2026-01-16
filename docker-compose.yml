@@ -1,16 +1,33 @@
 services:
+  # Nginx reverse proxy with HTTPS (Encryption in Transit)
+  nginx:
+    image: nginx:alpine
+    container_name: fileupload-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+    networks:
+      - fileupload-network
+    restart: unless-stopped
+
   app:
     build: .
     container_name: fileupload-app
-    ports:
-      - "8080:8080"
+    # Only expose to internal network (nginx handles external traffic)
+    expose:
+      - "8080"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
       - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/fileupload?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=rootpassword
       - FILE_UPLOAD_DIR=/app/uploads
-      # Encryption settings (AES-256-GCM)
+      # Encryption at rest (AES-256-GCM)
       # Generate a new key with: openssl rand -base64 32
       # IMPORTANT: Keep this key safe! Without it, encrypted files cannot be recovered!
       - ENCRYPTION_ENABLED=true
@@ -26,7 +43,6 @@ services:
     networks:
       - fileupload-network
     restart: unless-stopped
-    # Increase timeout for large uploads
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
       interval: 30s
