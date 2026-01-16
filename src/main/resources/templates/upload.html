@@ -48,7 +48,11 @@
             </span>
             <span class="navbar-text text-white-50 me-3">
                 👤 <span th:text="${username}">User</span>
+                <span th:if="${isAdmin}" class="badge bg-danger ms-1">Admin</span>
             </span>
+            <a th:if="${isAdmin}" th:href="@{/admin}" class="btn btn-outline-warning btn-sm me-2">
+                🛡️ Admin Panel
+            </a>
             <form th:action="@{/logout}" method="post" class="d-inline">
                 <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
             </form>

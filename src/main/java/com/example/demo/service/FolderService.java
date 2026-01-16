@@ -226,6 +226,116 @@ public class FolderService {
         return String.format("%.2f GB", bytes / (1024.0 * 1024 * 1024));
     }
 
+    // ============ Admin Methods ============
+
+    /**
+     * Get all files (admin only).
+     */
+    @Transactional(readOnly = true)
+    public List<Folder> getAllFilesAdmin() {
+        return fileRepository.findAllByOrderByUploadedAtDesc();
+    }
+
+    /**
+     * Get files for a specific user (admin only).
+     */
+    @Transactional(readOnly = true)
+    public List<Folder> getFilesByUser(User user) {
+        return fileRepository.findByUserOrderByUploadedAtDesc(user);
+    }
+
+    /**
+     * Get file by ID (admin only - can access any file).
+     */
+    @Transactional(readOnly = true)
+    public Folder getFileByIdAdmin(Long id) {
+        return fileRepository.findById(id)
+                .orElseThrow(() -> new FileNotFoundException("File not found: " + id));
+    }
+
+    /**
+     * Load file as resource (admin only - can download any file using owner's key).
+     */
+    @Transactional(readOnly = true)
+    public Resource loadFileAsResourceAdmin(Long id) {
+        Folder folder = fileRepository.findById(id)
+                .orElseThrow(() -> new FileNotFoundException("File not found: " + id));
+
+        Path filePath = uploadPath.resolve(folder.getStoredFileName()).normalize();
+
+        if (!Files.exists(filePath) || !Files.isReadable(filePath)) {
+            throw new FileNotFoundException("File not found: " + folder.getFileName());
+        }
+
+        try {
+            boolean isEncryptedFile = folder.getStoredFileName() != null
+                    && folder.getStoredFileName().endsWith(".enc");
+            if (isEncryptedFile) {
+                // Decrypt with file owner's key
+                InputStream decryptedStream = encryptionService.decryptFromFile(filePath,
+                        folder.getUser().getEncryptionKey());
+                return new InputStreamResource(decryptedStream);
+            }
+
+            return new InputStreamResource(Files.newInputStream(filePath));
+        } catch (IOException e) {
+            throw new FileStorageException("Could not read file: " + folder.getFileName(), e);
+        }
+    }
+
+    /**
+     * Delete file (admin only - can delete any file).
+     */
+    @Transactional
+    public void deleteFileAdmin(Long id) {
+        Folder folder = fileRepository.findById(id)
+                .orElseThrow(() -> new FileNotFoundException("File not found: " + id));
+
+        try {
+            Path filePath = uploadPath.resolve(folder.getStoredFileName());
+            Files.deleteIfExists(filePath);
+            fileRepository.delete(folder);
+            log.info("File deleted by admin: {} (owner={})", folder.getFileName(),
+                    folder.getUser().getUsername());
+        } catch (IOException e) {
+            throw new FileStorageException("Could not delete file: " + folder.getFileName(), e);
+        }
+    }
+
+    /**
+     * Delete all files for a user (admin only - used when deleting user).
+     */
+    @Transactional
+    public void deleteAllFilesByUser(User user) {
+        List<Folder> userFiles = fileRepository.findByUserOrderByUploadedAtDesc(user);
+        for (Folder folder : userFiles) {
+            try {
+                Path filePath = uploadPath.resolve(folder.getStoredFileName());
+                Files.deleteIfExists(filePath);
+            } catch (IOException e) {
+                log.error("Could not delete file: {}", folder.getStoredFileName(), e);
+            }
+        }
+        fileRepository.deleteByUser(user);
+        log.info("All files deleted for user: {}", user.getUsername());
+    }
+
+    /**
+     * Get global storage stats (admin only).
+     */
+    public StorageStats getGlobalStorageStats() {
+        try {
+            long totalFiles = fileRepository.count();
+            long totalSize = fileRepository.sumAllFileSize();
+            long availableSpace = Files.getFileStore(uploadPath).getUsableSpace();
+
+            return new StorageStats(totalFiles, totalSize, availableSpace, encryptionEnabled);
+        } catch (IOException e) {
+            log.error("Error getting global storage stats", e);
+            return new StorageStats(0, 0, 0, encryptionEnabled);
+        }
+    }
+
     public record StorageStats(long totalFiles, long totalSize, long availableSpace, boolean encryptionEnabled) {
     }
 }

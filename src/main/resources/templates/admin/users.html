@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Users - Admin</title>
+    <link rel="stylesheet" href="/webjars/bootstrap/5.3.3/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 8px;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .table-hover tbody tr:hover { background-color: #f1f3f5; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-0">
+            <div class="text-center py-4 text-white">
+                <h4>🛡️ Admin Panel</h4>
+                <small th:text="'Logged in as: ' + ${username}"></small>
+            </div>
+            <nav class="nav flex-column">
+                <a class="nav-link" th:href="@{/admin}">📊 Dashboard</a>
+                <a class="nav-link active" th:href="@{/admin/users}">👥 Users</a>
+                <a class="nav-link" th:href="@{/admin/files}">📁 All Files</a>
+                <hr class="bg-light mx-3">
+                <a class="nav-link" th:href="@{/}">🏠 Back to App</a>
+                <form th:action="@{/logout}" method="post" class="mx-3 mt-2">
+                    <button type="submit" class="btn btn-outline-light btn-sm w-100">Logout</button>
+                </form>
+            </nav>
+        </div>
+
+        <!-- Main content -->
+        <div class="col-md-10 p-4">
+            <h2 class="mb-4">👥 Manage Users</h2>
+
+            <!-- Alerts -->
+            <div th:if="${success}" class="alert alert-success alert-dismissible fade show">
+                <span th:text="${success}"></span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            <div th:if="${error}" class="alert alert-danger alert-dismissible fade show">
+                <span th:text="${error}"></span>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+
+            <!-- Users Table -->
+            <div class="card">
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Last Login</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="user : ${users}">
+                                <td th:text="${user.id}"></td>
+                                <td th:text="${user.username}"></td>
+                                <td th:text="${user.email}"></td>
+                                <td>
+                                    <form th:action="@{/admin/users/{id}/role(id=${user.id})}" method="post"
+                                          class="d-inline" th:if="${user.username != username}">
+                                        <select name="role" class="form-select form-select-sm d-inline-block"
+                                                style="width: auto;" onchange="this.form.submit()">
+                                            <option value="USER" th:selected="${user.role.name() == 'USER'}">USER</option>
+                                            <option value="ADMIN" th:selected="${user.role.name() == 'ADMIN'}">ADMIN</option>
+                                        </select>
+                                    </form>
+                                    <span th:if="${user.username == username}">
+                                        <span th:if="${user.role.name() == 'ADMIN'}" class="badge bg-danger">ADMIN (You)</span>
+                                        <span th:if="${user.role.name() == 'USER'}" class="badge bg-secondary">USER (You)</span>
+                                    </span>
+                                </td>
+                                <td>
+                                    <span th:if="${user.enabled}" class="badge bg-success">Active</span>
+                                    <span th:unless="${user.enabled}" class="badge bg-warning">Disabled</span>
+                                </td>
+                                <td th:text="${#temporals.format(user.createdAt, 'yyyy-MM-dd HH:mm')}"></td>
+                                <td th:text="${user.lastLogin != null ? #temporals.format(user.lastLogin, 'yyyy-MM-dd HH:mm') : 'Never'}"></td>
+                                <td>
+                                    <div class="btn-group btn-group-sm" th:if="${user.username != username}">
+                                        <a th:href="@{/admin/users/{id}/files(id=${user.id})}"
+                                           class="btn btn-outline-primary" title="View Files">📁</a>
+                                        <form th:action="@{/admin/users/{id}/toggle(id=${user.id})}" method="post" class="d-inline">
+                                            <button type="submit" class="btn btn-outline-warning"
+                                                    th:title="${user.enabled ? 'Disable' : 'Enable'}">
+                                                <span th:if="${user.enabled}">🚫</span>
+                                                <span th:unless="${user.enabled}">✅</span>
+                                            </button>
+                                        </form>
+                                        <button type="button" class="btn btn-outline-danger"
+                                                data-bs-toggle="modal" th:data-bs-target="'#deleteModal' + ${user.id}"
+                                                title="Delete">🗑️</button>
+                                    </div>
+                                    <span th:if="${user.username == username}" class="text-muted small">--</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modals -->
+<th:block th:each="user : ${users}" th:if="${user.username != username}">
+    <div class="modal fade" th:id="'deleteModal' + ${user.id}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete user <strong th:text="${user.username}"></strong>?</p>
+                    <p class="text-danger"><strong>Warning:</strong> This will also delete all their files!</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <form th:action="@{/admin/users/{id}/delete(id=${user.id})}" method="post" class="d-inline">
+                        <button type="submit" class="btn btn-danger">Delete User</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</th:block>
+
+<script src="/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

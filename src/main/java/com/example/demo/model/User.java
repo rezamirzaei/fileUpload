@@ -32,6 +32,14 @@ public class User {
     private String password; // BCrypt hashed
 
     /**
+     * User role for authorization (USER or ADMIN).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private Role role = Role.USER;
+
+    /**
      * Per-user encryption key (Base64 encoded, 32 bytes for AES-256).
      * Generated automatically when user registers.
      */
@@ -48,4 +56,11 @@ public class User {
 
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
+
+    /**
+     * Check if user is an admin.
+     */
+    public boolean isAdmin() {
+        return Role.ADMIN.equals(this.role);
+    }
 }

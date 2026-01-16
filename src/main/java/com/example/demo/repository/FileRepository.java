@@ -34,6 +34,22 @@ public interface FileRepository extends JpaRepository<Folder, Long> {
     @Query("SELECT COALESCE(SUM(f.fileSize), 0) FROM Folder f WHERE f.user = :user")
     long sumFileSizeByUser(@Param("user") User user);
 
+    /**
+     * Find all files ordered by upload date (for admin).
+     */
+    List<Folder> findAllByOrderByUploadedAtDesc();
+
+    /**
+     * Calculate total size of all files (for admin).
+     */
+    @Query("SELECT COALESCE(SUM(f.fileSize), 0) FROM Folder f")
+    long sumAllFileSize();
+
+    /**
+     * Delete all files belonging to a user (for admin when deleting user).
+     */
+    void deleteByUser(User user);
+
     Optional<Folder> findByFileName(String fileName);
 
     Optional<Folder> findByStoredFileName(String storedFileName);

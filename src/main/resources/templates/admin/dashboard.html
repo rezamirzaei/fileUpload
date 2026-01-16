@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - File Upload</title>
+    <link rel="stylesheet" href="/webjars/bootstrap/5.3.3/css/bootstrap.min.css">
+    <style>
+        body { background-color: #f8f9fa; }
+        .sidebar {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        }
+        .sidebar .nav-link {
+            color: rgba(255,255,255,0.8);
+            padding: 12px 20px;
+            margin: 5px 10px;
+            border-radius: 8px;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active {
+            color: white;
+            background: rgba(255,255,255,0.1);
+        }
+        .stats-card {
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .stats-card .card-body { padding: 25px; }
+        .stats-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+        .table-hover tbody tr:hover { background-color: #f1f3f5; }
+    </style>
+</head>
+<body>
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar p-0">
+            <div class="text-center py-4 text-white">
+                <h4>🛡️ Admin Panel</h4>
+                <small th:text="'Logged in as: ' + ${username}"></small>
+            </div>
+            <nav class="nav flex-column">
+                <a class="nav-link active" th:href="@{/admin}">📊 Dashboard</a>
+                <a class="nav-link" th:href="@{/admin/users}">👥 Users</a>
+                <a class="nav-link" th:href="@{/admin/files}">📁 All Files</a>
+                <hr class="bg-light mx-3">
+                <a class="nav-link" th:href="@{/}">🏠 Back to App</a>
+                <form th:action="@{/logout}" method="post" class="mx-3 mt-2">
+                    <button type="submit" class="btn btn-outline-light btn-sm w-100">Logout</button>
+                </form>
+            </nav>
+        </div>
+
+        <!-- Main content -->
+        <div class="col-md-10 p-4">
+            <h2 class="mb-4">Dashboard Overview</h2>
+
+            <!-- Stats Cards -->
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card stats-card">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="stats-icon bg-primary text-white me-3">👥</div>
+                            <div>
+                                <h6 class="text-muted mb-1">Total Users</h6>
+                                <h3 class="mb-0" th:text="${totalUsers}">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="stats-icon bg-danger text-white me-3">🛡️</div>
+                            <div>
+                                <h6 class="text-muted mb-1">Admins</h6>
+                                <h3 class="mb-0" th:text="${totalAdmins}">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="stats-icon bg-success text-white me-3">📁</div>
+                            <div>
+                                <h6 class="text-muted mb-1">Total Files</h6>
+                                <h3 class="mb-0" th:text="${totalFiles}">0</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card stats-card">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="stats-icon bg-warning text-white me-3">💾</div>
+                            <div>
+                                <h6 class="text-muted mb-1">Storage Used</h6>
+                                <h3 class="mb-0" th:text="${totalSize}">0 B</h3>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Users -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Users</h5>
+                    <a th:href="@{/admin/users}" class="btn btn-sm btn-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                                <th>Status</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="user : ${users}" th:if="${#lists.size(users) > 0}">
+                                <td th:text="${user.username}"></td>
+                                <td th:text="${user.email}"></td>
+                                <td>
+                                    <span th:if="${user.role.name() == 'ADMIN'}" class="badge bg-danger">ADMIN</span>
+                                    <span th:if="${user.role.name() == 'USER'}" class="badge bg-secondary">USER</span>
+                                </td>
+                                <td>
+                                    <span th:if="${user.enabled}" class="badge bg-success">Active</span>
+                                    <span th:unless="${user.enabled}" class="badge bg-warning">Disabled</span>
+                                </td>
+                                <td th:text="${#temporals.format(user.createdAt, 'yyyy-MM-dd HH:mm')}"></td>
+                                <td>
+                                    <a th:href="@{/admin/users/{id}/files(id=${user.id})}"
+                                       class="btn btn-sm btn-outline-primary">View Files</a>
+                                </td>
+                            </tr>
+                            <tr th:if="${#lists.isEmpty(users)}">
+                                <td colspan="6" class="text-center text-muted">No users found</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -42,6 +42,11 @@ public class UploadController {
         model.addAttribute("encryptionEnabled", stats.encryptionEnabled());
         model.addAttribute("username", userDetails != null ? userDetails.getUsername() : "Guest");
 
+        // Check if user has admin role
+        boolean isAdmin = userDetails != null && userDetails.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+        model.addAttribute("isAdmin", isAdmin);
+
         return "upload";
     }
 
