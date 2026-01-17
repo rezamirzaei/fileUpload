@@ -185,6 +185,9 @@ public class AdminController {
 
     /**
      * Download any file (admin can access all files).
+     *
+     * ZERO-KNOWLEDGE: For encrypted files, admin downloads the ENCRYPTED data.
+     * They cannot decrypt it without the user's password.
      */
     @GetMapping("/files/{id}/download")
     public ResponseEntity<Resource> downloadFile(@PathVariable Long id) {
@@ -192,15 +195,25 @@ public class AdminController {
         Resource resource = folderService.loadFileAsResourceAdmin(id);
 
         String contentType = folder.getContentType();
+        boolean isEncrypted = folderService.isFileEncrypted(folder);
+
+        // For encrypted files, use binary content type and add .enc extension
+        if (isEncrypted) {
+            contentType = "application/octet-stream";
+        }
         if (contentType == null || contentType.isEmpty()) {
             contentType = "application/octet-stream";
         }
 
+        String fileName = folder.getFileName();
+        if (isEncrypted && !fileName.endsWith(".enc")) {
+            fileName = fileName + ".encrypted";
+        }
+
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
-                .contentLength(folder.getFileSize())
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=\"" + folder.getFileName() + "\"")
+                        "attachment; filename=\"" + fileName + "\"")
                 .body(resource);
     }
 

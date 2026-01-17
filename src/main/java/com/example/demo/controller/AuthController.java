@@ -1,5 +1,6 @@
 package com.example.demo.controller;
 
+import com.example.demo.model.User;
 import com.example.demo.service.UserService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -8,13 +9,15 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+import java.util.Map;
+import java.util.Optional;
 
 @Controller
 @RequiredArgsConstructor
@@ -26,6 +29,32 @@ public class AuthController {
     @GetMapping("/login")
     public String loginPage() {
         return "login";
+    }
+
+    /**
+     * API endpoint to get user's encryption salt for client-side key derivation.
+     * This is safe to expose because:
+     * 1. Salt alone cannot decrypt files
+     * 2. Salt is useless without the password
+     * 3. This enables true zero-knowledge encryption where the key never leaves the browser
+     */
+    @GetMapping("/api/auth/salt/{username}")
+    @ResponseBody
+    public ResponseEntity<?> getUserSalt(@PathVariable String username) {
+        Optional<User> user = userService.findByUsername(username);
+        if (user.isPresent()) {
+            // Return salt for client-side key derivation
+            return ResponseEntity.ok(Map.of(
+                "salt", user.get().getEncryptionSalt(),
+                "iterations", 310000 // PBKDF2 iterations - must match client-side
+            ));
+        }
+        // Don't reveal whether user exists - return dummy salt
+        // This prevents username enumeration attacks
+        return ResponseEntity.ok(Map.of(
+            "salt", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", // dummy salt
+            "iterations", 310000
+        ));
     }
 
     @GetMapping("/register")

@@ -29,6 +29,8 @@ services:
       - FILE_UPLOAD_DIR=/app/uploads
       # Per-user encryption (each user has their own AES-256 key)
       - ENCRYPTION_ENABLED=true
+      # Default admin password (change this in production!)
+      - ADMIN_DEFAULT_PASSWORD=${ADMIN_DEFAULT_PASSWORD:-admin123}
       # JVM settings for large file handling (adjust based on available memory)
       - JAVA_OPTS=-Xms512m -Xmx4g -XX:+UseG1GC -XX:MaxDirectMemorySize=1g
     depends_on:

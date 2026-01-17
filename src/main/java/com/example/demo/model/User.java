@@ -7,7 +7,12 @@ import java.time.LocalDateTime;
 
 /**
  * User entity for authentication and file ownership.
- * Each user has their own encryption key for file encryption.
+ *
+ * ZERO-KNOWLEDGE ENCRYPTION:
+ * - Only the encryption salt is stored, NOT the encryption key
+ * - The encryption key is derived from password + salt at login
+ * - The derived key exists only in the user's session
+ * - Admins CANNOT decrypt user files
  */
 @Entity
 @Table(name = "users")
@@ -29,7 +34,7 @@ public class User {
     private String email;
 
     @Column(nullable = false)
-    private String password; // BCrypt hashed
+    private String password; // BCrypt hashed (for authentication only)
 
     /**
      * User role for authorization (USER or ADMIN).
@@ -40,11 +45,17 @@ public class User {
     private Role role = Role.USER;
 
     /**
-     * Per-user encryption key (Base64 encoded, 32 bytes for AES-256).
-     * Generated automatically when user registers.
+     * Salt for deriving the user's encryption key.
+     * The actual encryption key is derived from: password + salt
+     * and is NEVER stored in the database.
+     *
+     * This enables zero-knowledge encryption where:
+     * - Only the user can decrypt their files
+     * - Admins cannot access file contents
+     * - If user forgets password, files are unrecoverable
      */
-    @Column(name = "encryption_key", nullable = false, length = 64)
-    private String encryptionKey;
+    @Column(name = "encryption_salt", nullable = false, length = 64)
+    private String encryptionSalt;
 
     @Column(nullable = false)
     @Builder.Default

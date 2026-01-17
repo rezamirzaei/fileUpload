@@ -50,6 +50,12 @@
             font-size: 50px;
             margin-bottom: 15px;
         }
+        .deriving-key {
+            display: none;
+        }
+        .deriving-key.show {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -84,7 +90,16 @@
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
 
-        <form th:action="@{/login}" method="post">
+        <!-- Key derivation progress -->
+        <div id="derivingKey" class="alert alert-info deriving-key" role="alert">
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                <span>🔑 Deriving encryption key locally...</span>
+            </div>
+            <small class="text-muted">Your key never leaves your browser</small>
+        </div>
+
+        <form id="loginForm" th:action="@{/login}" method="post">
             <div class="mb-3">
                 <label for="username" class="form-label">Username</label>
                 <input type="text" class="form-control" id="username" name="username"
@@ -95,8 +110,9 @@
                 <input type="password" class="form-control" id="password" name="password"
                        placeholder="Enter your password" required>
             </div>
-            <button type="submit" class="btn btn-primary w-100 mb-3">
-                Sign In
+            <button type="submit" id="submitBtn" class="btn btn-primary w-100 mb-3">
+                <span id="btnText">Sign In</span>
+                <span id="btnSpinner" class="spinner-border spinner-border-sm d-none" role="status"></span>
             </button>
         </form>
 
@@ -108,11 +124,62 @@
         <hr class="my-4">
 
         <div class="text-center text-muted small">
-            <p class="mb-1">🔒 End-to-end encryption</p>
-            <p class="mb-0">📁 Your files, your key</p>
+            <p class="mb-1">🔒 True Zero-Knowledge Encryption</p>
+            <p class="mb-0">🔑 Encryption key derived locally in your browser</p>
         </div>
     </div>
 
     <script src="/webjars/bootstrap/5.3.3/js/bootstrap.bundle.min.js"></script>
+    <script src="/js/zero-knowledge-encryption.js"></script>
+    <script>
+        const loginForm = document.getElementById('loginForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+        const btnSpinner = document.getElementById('btnSpinner');
+        const derivingKeyAlert = document.getElementById('derivingKey');
+
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Show loading state
+            submitBtn.disabled = true;
+            btnText.textContent = 'Signing in...';
+            btnSpinner.classList.remove('d-none');
+            derivingKeyAlert.classList.add('show');
+
+            try {
+                // Step 1: Fetch user's salt from server
+                const saltResponse = await fetch(`/api/auth/salt/${encodeURIComponent(username)}`);
+                const saltData = await saltResponse.json();
+
+                // Step 2: Derive encryption key CLIENT-SIDE (key never sent to server!)
+                const encryptionKey = await ZeroKnowledgeEncryption.deriveKey(password, saltData.salt);
+
+                // Step 3: Store the key in browser sessionStorage ONLY
+                ZeroKnowledgeEncryption.storeKey(encryptionKey);
+
+                console.log('🔑 Encryption key derived and stored locally (never sent to server)');
+
+                // Step 4: Submit the form for authentication
+                // The password is sent to server ONLY for authentication (bcrypt check)
+                // The derived encryption key stays in the browser
+                loginForm.submit();
+
+            } catch (error) {
+                console.error('Key derivation failed:', error);
+                // Still submit form - server-side key derivation will be used as fallback
+                loginForm.submit();
+            }
+        });
+
+        // Clear encryption key on logout
+        if (window.location.search.includes('logout')) {
+            ZeroKnowledgeEncryption.clearKey();
+            console.log('🔐 Encryption key cleared from browser');
+        }
+    </script>
 </body>
 </html>

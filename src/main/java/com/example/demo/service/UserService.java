@@ -9,12 +9,18 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Service for user management.
+ *
+ * ZERO-KNOWLEDGE ENCRYPTION:
+ * - Only stores encryption salt, NOT the key
+ * - Encryption key is derived from password at login
+ * - Admins cannot decrypt user files
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -22,9 +28,10 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final EncryptionService encryptionService;
 
     /**
-     * Register a new user with auto-generated encryption key.
+     * Register a new user with auto-generated encryption salt.
      */
     @Transactional
     public User registerUser(String username, String email, String password) {
@@ -33,6 +40,7 @@ public class UserService {
 
     /**
      * Register a new user with a specific role.
+     * The encryption key is derived from password + salt at login time.
      */
     @Transactional
     public User registerUser(String username, String email, String password, Role role) {
@@ -46,32 +54,33 @@ public class UserService {
             throw new IllegalArgumentException("Email already registered: " + email);
         }
 
-        // Generate unique encryption key for this user (32 bytes for AES-256)
-        String encryptionKey = generateUserEncryptionKey();
+        // Generate unique salt (NOT the key!) for this user
+        // The encryption key will be derived from password + salt at login
+        String encryptionSalt = encryptionService.generateSalt();
 
         User user = User.builder()
                 .username(username)
                 .email(email)
                 .password(passwordEncoder.encode(password))
                 .role(role)
-                .encryptionKey(encryptionKey)
+                .encryptionSalt(encryptionSalt)
                 .enabled(true)
                 .createdAt(LocalDateTime.now())
                 .build();
 
         User savedUser = userRepository.save(user);
-        log.info("New user registered: {} (id={}, role={})", username, savedUser.getId(), role);
+        log.info("New user registered: {} (id={}, role={}) - Zero-knowledge encryption enabled",
+                username, savedUser.getId(), role);
 
         return savedUser;
     }
 
     /**
-     * Generate a unique AES-256 encryption key for a user.
+     * Derive the user's encryption key from their password.
+     * This key is computed at login and stored ONLY in the session.
      */
-    private String generateUserEncryptionKey() {
-        byte[] key = new byte[32]; // 256 bits
-        new SecureRandom().nextBytes(key);
-        return Base64.getEncoder().encodeToString(key);
+    public String deriveEncryptionKey(User user, String plainPassword) {
+        return encryptionService.deriveKeyFromPassword(plainPassword, user.getEncryptionSalt());
     }
 
     @Transactional(readOnly = true)

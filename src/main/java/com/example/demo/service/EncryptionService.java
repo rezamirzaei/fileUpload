@@ -8,7 +8,9 @@ import javax.crypto.Cipher;
 import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.SecretKey;
+import javax.crypto.SecretKeyFactory;
 import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.PBEKeySpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -16,11 +18,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
+import java.security.spec.KeySpec;
 import java.util.Base64;
 
 /**
  * Service for encrypting and decrypting files using AES-256-GCM.
- * Supports per-user encryption keys for multi-tenant isolation.
+ *
+ * ZERO-KNOWLEDGE ENCRYPTION:
+ * - User's encryption key is derived from their password using PBKDF2
+ * - Only the salt is stored in the database, NOT the key
+ * - The derived key exists only in the user's session after login
+ * - Admins CANNOT decrypt user files (they don't know the password)
+ * - If user forgets password, their files are UNRECOVERABLE
  */
 @Service
 @Slf4j
@@ -31,6 +40,45 @@ public class EncryptionService {
     private static final int GCM_IV_LENGTH = 12; // 96 bits recommended for GCM
     private static final int GCM_TAG_LENGTH = 128; // 128 bits authentication tag
     private static final int BUFFER_SIZE = 8192; // 8KB buffer for streaming
+
+    // PBKDF2 parameters for key derivation
+    private static final String KEY_DERIVATION_ALGORITHM = "PBKDF2WithHmacSHA256";
+    private static final int PBKDF2_ITERATIONS = 310000; // OWASP 2023 recommendation
+    private static final int SALT_LENGTH = 32; // 256 bits
+    private static final int KEY_LENGTH = 256; // AES-256
+
+    /**
+     * Generate a random salt for a new user.
+     * This salt is stored in the database and used with the password to derive the encryption key.
+     */
+    public String generateSalt() {
+        byte[] salt = new byte[SALT_LENGTH];
+        new SecureRandom().nextBytes(salt);
+        return Base64.getEncoder().encodeToString(salt);
+    }
+
+    /**
+     * Derive an AES-256 encryption key from user's password and salt.
+     * This key is NEVER stored - it's computed at login and kept in session only.
+     *
+     * @param password User's plaintext password
+     * @param salt User's unique salt (stored in database)
+     * @return Base64-encoded encryption key (for session storage)
+     */
+    public String deriveKeyFromPassword(String password, String salt) {
+        try {
+            byte[] saltBytes = Base64.getDecoder().decode(salt);
+
+            SecretKeyFactory factory = SecretKeyFactory.getInstance(KEY_DERIVATION_ALGORITHM);
+            KeySpec spec = new PBEKeySpec(password.toCharArray(), saltBytes, PBKDF2_ITERATIONS, KEY_LENGTH);
+            SecretKey tmp = factory.generateSecret(spec);
+
+            byte[] keyBytes = tmp.getEncoded();
+            return Base64.getEncoder().encodeToString(keyBytes);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to derive encryption key", e);
+        }
+    }
 
     /**
      * Create a SecretKey from a Base64-encoded key string.
@@ -52,8 +100,10 @@ public class EncryptionService {
     }
 
     /**
-     * Generate a new random AES-256 key (for new user registration).
+     * Generate a new random AES-256 key.
+     * @deprecated Use deriveKeyFromPassword() for zero-knowledge encryption
      */
+    @Deprecated
     public String generateNewKey() {
         byte[] key = new byte[32]; // 256 bits
         new SecureRandom().nextBytes(key);

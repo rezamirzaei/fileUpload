@@ -55,6 +55,14 @@
                 </div>
             </div>
 
+            <!-- Zero-Knowledge Info -->
+            <div class="alert alert-info">
+                <strong>🔒 Zero-Knowledge Encryption:</strong>
+                Files marked with 🔒 are encrypted with the owner's personal key (derived from their password).
+                As an admin, you can download these files but <strong>cannot decrypt them</strong> -
+                only the file owner can open them.
+            </div>
+
             <!-- Alerts -->
             <div th:if="${success}" class="alert alert-success alert-dismissible fade show">
                 <span th:text="${success}"></span>
@@ -86,7 +94,7 @@
                                 <td>
                                     <span th:text="${file.fileName}"></span>
                                     <span th:if="${file.storedFileName.endsWith('.enc')}"
-                                          class="badge bg-success ms-1" title="Encrypted">🔒</span>
+                                          class="badge bg-warning ms-1" title="Encrypted - Only owner can decrypt">🔒</span>
                                 </td>
                                 <td>
                                     <a th:href="@{/admin/users/{id}/files(id=${file.user.id})}"

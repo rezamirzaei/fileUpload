@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Large File Upload - Spring Boot</title>
+    <!-- CSRF Token Meta Tags -->
+    <meta name="_csrf" th:content="${_csrf.token}"/>
+    <meta name="_csrf_header" th:content="${_csrf.headerName}"/>
     <link rel="stylesheet" th:href="@{/webjars/bootstrap/css/bootstrap.min.css}">
     <style>
         body { background-color: #f8f9fa; }
@@ -188,7 +191,12 @@
                         </td>
                         <td th:text="${#temporals.format(file.uploadedAt, 'yyyy-MM-dd HH:mm')}"></td>
                         <td class="text-end">
-                            <a th:href="@{/download/{id}(id=${file.id})}" class="btn btn-sm btn-success">⬇️ Download</a>
+                            <button type="button" class="btn btn-sm btn-success download-btn"
+                                    th:data-id="${file.id}"
+                                    th:data-filename="${file.fileName}"
+                                    th:data-encrypted="${file.storedFileName.endsWith('.enc.client')}">
+                                ⬇️ Download
+                            </button>
                             <form th:action="@{/delete/{id}(id=${file.id})}" method="post" style="display:inline"
                                   onsubmit="return confirm('Delete this file?');">
                                 <button type="submit" class="btn btn-sm btn-danger">🗑️ Delete</button>
@@ -207,6 +215,7 @@
 </div>
 
 <script th:src="@{/webjars/bootstrap/js/bootstrap.bundle.min.js}"></script>
+<script th:src="@{/js/zero-knowledge-encryption.js}"></script>
 <script>
     const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');
@@ -214,6 +223,19 @@
     const uploadBtn = document.getElementById('uploadBtn');
     const progressSection = document.getElementById('progressSection');
     const progressBar = document.getElementById('progressBar');
+
+    // Check if encryption key is available
+    let hasEncryptionKey = false;
+    try {
+        if (typeof ZeroKnowledgeEncryption !== 'undefined' && ZeroKnowledgeEncryption.hasKey()) {
+            hasEncryptionKey = true;
+            console.log('🔑 Client-side encryption key available');
+        } else {
+            console.warn('⚠️ No client-side encryption key found. Server-side encryption will be used.');
+        }
+    } catch (e) {
+        console.warn('⚠️ Encryption module not available:', e);
+    }
 
     // Drag and drop
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(event => {
@@ -243,29 +265,76 @@
         }
     }
 
-    // Upload with progress tracking using XHR
-    uploadForm.addEventListener('submit', function(e) {
+    // Upload with optional client-side encryption
+    uploadForm.addEventListener('submit', async function(e) {
         e.preventDefault();
 
-        const formData = new FormData(uploadForm);
-        const xhr = new XMLHttpRequest();
-        const startTime = Date.now();
+        const file = fileInput.files[0];
+        if (!file) {
+            alert('Please select a file first');
+            return;
+        }
 
         uploadBtn.disabled = true;
+        progressSection.classList.remove('d-none');
+
+        let fileToUpload = file;
+        let clientEncrypted = false;
+
+        // Try client-side encryption if key is available
+        if (hasEncryptionKey) {
+            try {
+                document.getElementById('uploadBtnText').textContent = '🔐 Encrypting...';
+                uploadZone.classList.add('encrypting');
+
+                console.log('🔐 Encrypting file client-side...');
+                const encryptionKey = ZeroKnowledgeEncryption.getKey();
+                const encryptedBlob = await ZeroKnowledgeEncryption.encryptFile(file, encryptionKey);
+
+                fileToUpload = new File([encryptedBlob], file.name + '.enc.client', {
+                    type: 'application/octet-stream'
+                });
+                clientEncrypted = true;
+
+                console.log('✅ File encrypted client-side, uploading...');
+                uploadZone.classList.remove('encrypting');
+            } catch (err) {
+                console.error('Client-side encryption failed:', err);
+                // Continue with server-side encryption
+                fileToUpload = file;
+                clientEncrypted = false;
+                uploadZone.classList.remove('encrypting');
+            }
+        }
+
         document.getElementById('uploadBtnText').textContent = 'Uploading...';
         document.getElementById('uploadSpinner').classList.remove('d-none');
-        progressSection.classList.remove('d-none');
         uploadZone.classList.add('uploading');
 
-        const totalSize = fileInput.files[0].size;
+        const formData = new FormData();
+        formData.append('file', fileToUpload);
+        formData.append('clientEncrypted', clientEncrypted ? 'true' : 'false');
+
+        const xhr = new XMLHttpRequest();
+        const startTime = Date.now();
+        const totalSize = fileToUpload.size;
         document.getElementById('totalSize').textContent = formatBytes(totalSize);
+
+        // Get CSRF token
+        const csrfMeta = document.querySelector('meta[name="_csrf"]');
+        const csrfHeaderMeta = document.querySelector('meta[name="_csrf_header"]');
+
+        xhr.open('POST', uploadForm.action);
+
+        if (csrfMeta && csrfHeaderMeta) {
+            xhr.setRequestHeader(csrfHeaderMeta.getAttribute('content'), csrfMeta.getAttribute('content'));
+        }
 
         xhr.upload.addEventListener('progress', function(e) {
             if (e.lengthComputable) {
                 const percent = Math.round((e.loaded / e.total) * 100);
                 progressBar.style.width = percent + '%';
                 progressBar.textContent = percent + '%';
-
                 document.getElementById('uploadedSize').textContent = formatBytes(e.loaded);
 
                 const elapsed = (Date.now() - startTime) / 1000;
@@ -283,17 +352,18 @@
             if (xhr.status === 200 || xhr.status === 302) {
                 window.location.reload();
             } else {
-                alert('Upload failed. Please try again.');
+                console.error('Upload failed with status:', xhr.status, xhr.responseText);
+                alert('Upload failed: ' + (xhr.responseText || 'Please try again.'));
                 resetUploadUI();
             }
         });
 
         xhr.addEventListener('error', function() {
+            console.error('Upload network error');
             alert('Upload failed. Please check your connection.');
             resetUploadUI();
         });
 
-        xhr.open('POST', uploadForm.action);
         xhr.send(formData);
     });
 
@@ -302,6 +372,7 @@
         document.getElementById('uploadBtnText').textContent = '📤 Upload File';
         document.getElementById('uploadSpinner').classList.add('d-none');
         uploadZone.classList.remove('uploading');
+        uploadZone.classList.remove('encrypting');
     }
 
     function formatBytes(bytes) {
@@ -316,6 +387,111 @@
         if (seconds < 60) return Math.round(seconds) + 's';
         if (seconds < 3600) return Math.round(seconds / 60) + 'm ' + Math.round(seconds % 60) + 's';
         return Math.round(seconds / 3600) + 'h ' + Math.round((seconds % 3600) / 60) + 'm';
+    }
+
+    // Handle download with client-side decryption
+    document.querySelectorAll('.download-btn').forEach(btn => {
+        btn.addEventListener('click', async function() {
+            const fileId = this.dataset.id;
+            const fileName = this.dataset.filename;
+            const isEncrypted = this.dataset.encrypted === 'true';
+
+            // Change button state
+            const originalText = this.innerHTML;
+            this.disabled = true;
+            this.innerHTML = '⏳ Downloading...';
+
+            try {
+                // Fetch the file
+                const response = await fetch(`/download/${fileId}`);
+                if (!response.ok) {
+                    throw new Error('Download failed: ' + response.status);
+                }
+
+                let blob = await response.blob();
+
+                // Decrypt if needed
+                if (isEncrypted && hasEncryptionKey) {
+                    this.innerHTML = '🔓 Decrypting...';
+                    console.log('🔓 Decrypting file client-side...');
+
+                    try {
+                        const encryptionKey = ZeroKnowledgeEncryption.getKey();
+                        // Get original content type from response headers or guess from filename
+                        const contentType = guessContentType(fileName);
+                        blob = await ZeroKnowledgeEncryption.decryptFile(blob, encryptionKey, contentType);
+                        console.log('✅ File decrypted successfully');
+                    } catch (decryptErr) {
+                        console.error('Decryption failed:', decryptErr);
+                        alert('Failed to decrypt file. Please make sure you are logged in with the same account that uploaded the file.');
+                        this.disabled = false;
+                        this.innerHTML = originalText;
+                        return;
+                    }
+                } else if (isEncrypted && !hasEncryptionKey) {
+                    alert('Cannot decrypt file: encryption key not available. Please log out and log in again.');
+                    this.disabled = false;
+                    this.innerHTML = originalText;
+                    return;
+                }
+
+                // Create download link
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                console.log('✅ File downloaded:', fileName);
+
+            } catch (err) {
+                console.error('Download error:', err);
+                alert('Download failed: ' + err.message);
+            } finally {
+                this.disabled = false;
+                this.innerHTML = originalText;
+            }
+        });
+    });
+
+    // Guess content type from file extension
+    function guessContentType(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        const types = {
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            'txt': 'text/plain',
+            'csv': 'text/csv',
+            'json': 'application/json',
+            'xml': 'application/xml',
+            'html': 'text/html',
+            'css': 'text/css',
+            'js': 'application/javascript',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'svg': 'image/svg+xml',
+            'webp': 'image/webp',
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/wav',
+            'mp4': 'video/mp4',
+            'webm': 'video/webm',
+            'zip': 'application/zip',
+            'rar': 'application/x-rar-compressed',
+            '7z': 'application/x-7z-compressed',
+            'tar': 'application/x-tar',
+            'gz': 'application/gzip'
+        };
+        return types[ext] || 'application/octet-stream';
     }
 </script>
 </body>

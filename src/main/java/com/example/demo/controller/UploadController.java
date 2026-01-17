@@ -52,6 +52,7 @@ public class UploadController {
 
     @PostMapping("/upload")
     public String uploadFile(@RequestParam("file") MultipartFile file,
+                             @RequestParam(value = "clientEncrypted", required = false, defaultValue = "false") boolean clientEncrypted,
                              RedirectAttributes redirectAttributes) {
         if (file.isEmpty()) {
             redirectAttributes.addFlashAttribute("error", "Please select a file to upload");
@@ -60,14 +61,15 @@ public class UploadController {
 
         try {
             long startTime = System.currentTimeMillis();
-            Folder folder = folderService.storeFile(file);
+            Folder folder = folderService.storeFile(file, clientEncrypted);
             long duration = System.currentTimeMillis() - startTime;
 
             String sizeFormatted = folderService.formatFileSize(folder.getFileSize());
             double speedMBps = folder.getFileSize() / (1024.0 * 1024.0) / (duration / 1000.0);
 
-            log.info("File uploaded: {} ({}) in {}ms ({} MB/s)",
-                    folder.getFileName(), sizeFormatted, duration, String.format("%.2f", speedMBps));
+            String encryptionType = clientEncrypted ? "client-side encrypted" : "server-side encrypted";
+            log.info("File uploaded ({}): {} ({}) in {}ms ({} MB/s)",
+                    encryptionType, folder.getFileName(), sizeFormatted, duration, String.format("%.2f", speedMBps));
 
             redirectAttributes.addFlashAttribute("success",
                     String.format("File uploaded successfully: %s (%s) in %.1f seconds",
@@ -85,17 +87,21 @@ public class UploadController {
         Folder folder = folderService.getFileById(id);
         Resource resource = folderService.loadFileAsResource(id);
 
+        boolean isClientEncrypted = folderService.isClientEncrypted(folder);
+
         String contentType = folder.getContentType();
-        if (contentType == null || contentType.isEmpty()) {
+        // For client-encrypted files, use binary type - decryption happens in browser
+        if (isClientEncrypted || contentType == null || contentType.isEmpty()) {
             contentType = "application/octet-stream";
         }
 
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(contentType))
-                .contentLength(folder.getFileSize())
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         "attachment; filename=\"" + folder.getFileName() + "\"")
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
+                // Custom header to indicate client-side decryption needed
+                .header("X-Client-Encrypted", String.valueOf(isClientEncrypted))
                 .body(resource);
     }
 
