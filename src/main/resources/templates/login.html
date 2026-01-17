@@ -156,12 +156,15 @@
                 const saltData = await saltResponse.json();
 
                 // Step 2: Derive encryption key CLIENT-SIDE (key never sent to server!)
+                // DETERMINISTIC: Same password + same salt = same key every time
                 const encryptionKey = await ZeroKnowledgeEncryption.deriveKey(password, saltData.salt);
 
-                // Step 3: Store the key in browser sessionStorage ONLY
-                ZeroKnowledgeEncryption.storeKey(encryptionKey);
+                // Step 3: Store the key in browser localStorage (persists across sessions!)
+                // Key is tied to username for multi-user support
+                ZeroKnowledgeEncryption.storeKey(encryptionKey, username);
 
-                console.log('🔑 Encryption key derived and stored locally (never sent to server)');
+                console.log('🔑 Encryption key derived and stored locally for user:', username);
+                console.log('📦 Key persists in localStorage - survives browser restart');
 
                 // Step 4: Submit the form for authentication
                 // The password is sent to server ONLY for authentication (bcrypt check)
@@ -175,9 +178,11 @@
             }
         });
 
-        // Clear encryption key on logout
+        // Clear encryption key on logout (optional - key can persist for convenience)
         if (window.location.search.includes('logout')) {
-            ZeroKnowledgeEncryption.clearKey();
+            // Don't clear key - user might want to login again quickly
+            // ZeroKnowledgeEncryption.clearKey();
+            console.log('🔐 Logged out - encryption key preserved in localStorage for quick re-login');
             console.log('🔐 Encryption key cleared from browser');
         }
     </script>

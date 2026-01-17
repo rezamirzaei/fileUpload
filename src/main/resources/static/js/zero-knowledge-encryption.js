@@ -4,15 +4,17 @@
  * This module derives the encryption key entirely in the browser using
  * the Web Crypto API. The actual encryption key NEVER leaves the browser.
  *
- * Flow:
- * 1. User enters password
- * 2. Browser derives encryption key using PBKDF2 (password + salt)
- * 3. Key is stored in sessionStorage (browser only)
- * 4. Password is sent to server ONLY for authentication (hashed by server)
- * 5. Files are encrypted/decrypted entirely client-side
+ * KEY PERSISTENCE:
+ * - Key is stored in localStorage (persists across browser sessions)
+ * - Key is tied to username (different users = different keys)
+ * - Key is re-derived from password on each login
+ * - Same password + same salt = same key (deterministic)
  *
- * Security: Even if the server is compromised, it cannot decrypt files
- * because it never has access to the derived encryption key.
+ * This means:
+ * - You can close browser and reopen - key is still there
+ * - You can use different tabs - same key
+ * - Different browser/device - must login again (key re-derived)
+ * - Forget password - files lost forever
  */
 
 const ZeroKnowledgeEncryption = {
@@ -21,9 +23,13 @@ const ZeroKnowledgeEncryption = {
     KEY_LENGTH: 256,
     SALT_LENGTH: 32,
 
+    // Storage key prefix
+    STORAGE_KEY_PREFIX: 'zk_encryption_key_',
+
     /**
      * Derive an AES-256 key from password and salt using PBKDF2.
      * This happens entirely in the browser - the key never leaves.
+     * DETERMINISTIC: Same password + same salt = same key every time.
      */
     async deriveKey(password, saltBase64) {
         const encoder = new TextEncoder();
@@ -52,7 +58,7 @@ const ZeroKnowledgeEncryption = {
             ['encrypt', 'decrypt']
         );
 
-        // Export key to store in sessionStorage
+        // Export key to store in localStorage
         const exportedKey = await crypto.subtle.exportKey('raw', key);
         return this.arrayBufferToBase64(exportedKey);
     },
@@ -115,32 +121,64 @@ const ZeroKnowledgeEncryption = {
     },
 
     /**
-     * Store the derived key in sessionStorage.
-     * Key is automatically cleared when browser tab closes.
+     * Store the derived key in localStorage (persists across sessions).
+     * Key is tied to username for multi-user support.
      */
-    storeKey(keyBase64) {
-        sessionStorage.setItem('zk_encryption_key', keyBase64);
+    storeKey(keyBase64, username) {
+        const storageKey = username ? this.STORAGE_KEY_PREFIX + username : this.STORAGE_KEY_PREFIX + 'default';
+        localStorage.setItem(storageKey, keyBase64);
+        // Also store current username
+        localStorage.setItem('zk_current_user', username || 'default');
+        console.log('🔑 Encryption key stored for user:', username || 'default');
     },
 
     /**
-     * Retrieve the encryption key from sessionStorage.
+     * Retrieve the encryption key from localStorage.
      */
-    getKey() {
-        return sessionStorage.getItem('zk_encryption_key');
+    getKey(username) {
+        const user = username || localStorage.getItem('zk_current_user') || 'default';
+        const storageKey = this.STORAGE_KEY_PREFIX + user;
+        return localStorage.getItem(storageKey);
     },
 
     /**
-     * Clear the encryption key (on logout).
+     * Clear the encryption key for a user (on logout).
      */
-    clearKey() {
-        sessionStorage.removeItem('zk_encryption_key');
+    clearKey(username) {
+        const user = username || localStorage.getItem('zk_current_user') || 'default';
+        const storageKey = this.STORAGE_KEY_PREFIX + user;
+        localStorage.removeItem(storageKey);
+        console.log('🔐 Encryption key cleared for user:', user);
+    },
+
+    /**
+     * Clear all encryption keys (full logout).
+     */
+    clearAllKeys() {
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith(this.STORAGE_KEY_PREFIX)) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        localStorage.removeItem('zk_current_user');
+        console.log('🔐 All encryption keys cleared');
     },
 
     /**
      * Check if encryption key is available.
      */
-    hasKey() {
-        return sessionStorage.getItem('zk_encryption_key') !== null;
+    hasKey(username) {
+        return this.getKey(username) !== null;
+    },
+
+    /**
+     * Get current logged-in username.
+     */
+    getCurrentUser() {
+        return localStorage.getItem('zk_current_user');
     },
 
     // Utility functions

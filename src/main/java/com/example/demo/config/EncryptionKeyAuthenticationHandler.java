@@ -2,11 +2,9 @@ package com.example.demo.config;
 
 import com.example.demo.model.User;
 import com.example.demo.repository.UserRepository;
-import com.example.demo.service.EncryptionService;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.Authentication;
@@ -18,14 +16,18 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 
 /**
- * Custom authentication handler that derives the user's encryption key
- * from their password at login time and stores it in the session.
+ * Custom authentication handler for login success.
  *
- * ZERO-KNOWLEDGE ENCRYPTION:
- * - The encryption key is derived from: password + user's salt
- * - The key is stored ONLY in the session (never in database)
- * - When session ends, the key is gone
- * - Admins cannot access the key or decrypt files
+ * TRUE ZERO-KNOWLEDGE ENCRYPTION:
+ * - The server NEVER derives or stores the encryption key
+ * - Key derivation happens ONLY in the browser (client-side JavaScript)
+ * - The server only stores the salt (useless without the password)
+ * - Even if the server is fully compromised, files remain encrypted
+ *
+ * The encryption key is derived CLIENT-SIDE using:
+ *   PBKDF2(password, salt, 310000 iterations) → AES-256 key
+ *
+ * This key is stored in browser's localStorage and NEVER sent to the server.
  */
 @Component
 @RequiredArgsConstructor
@@ -33,12 +35,6 @@ import java.time.LocalDateTime;
 public class EncryptionKeyAuthenticationHandler extends SavedRequestAwareAuthenticationSuccessHandler {
 
     private final UserRepository userRepository;
-    private final EncryptionService encryptionService;
-
-    /**
-     * Session attribute name for storing the derived encryption key.
-     */
-    public static final String ENCRYPTION_KEY_SESSION_ATTRIBUTE = "USER_ENCRYPTION_KEY";
 
     @Override
     @Transactional
@@ -47,30 +43,19 @@ public class EncryptionKeyAuthenticationHandler extends SavedRequestAwareAuthent
                                         Authentication authentication) throws IOException, ServletException {
 
         String username = authentication.getName();
-        String password = request.getParameter("password"); // Get plaintext password from login form
 
-        if (password != null) {
-            User user = userRepository.findByUsername(username).orElse(null);
+        User user = userRepository.findByUsername(username).orElse(null);
+        if (user != null) {
+            // Update last login time only - NO key derivation on server!
+            user.setLastLogin(LocalDateTime.now());
+            userRepository.save(user);
 
-            if (user != null) {
-                // Derive encryption key from password + salt
-                String encryptionKey = encryptionService.deriveKeyFromPassword(
-                        password, user.getEncryptionSalt());
-
-                // Store the derived key in session ONLY
-                HttpSession session = request.getSession();
-                session.setAttribute(ENCRYPTION_KEY_SESSION_ATTRIBUTE, encryptionKey);
-
-                // Update last login time
-                user.setLastLogin(LocalDateTime.now());
-                userRepository.save(user);
-
-                log.info("User {} logged in - encryption key derived and stored in session", username);
-            }
+            log.info("User {} logged in - encryption key will be derived CLIENT-SIDE only", username);
         }
 
-        // Clear password from memory (best effort)
-        // Note: The actual parameter is managed by the servlet container
+        // Password is used ONLY for BCrypt authentication
+        // It is NOT used to derive encryption key on server
+        // The encryption key is derived in the browser using JavaScript
 
         super.onAuthenticationSuccess(request, response, authentication);
     }

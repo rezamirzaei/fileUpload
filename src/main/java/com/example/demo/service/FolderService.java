@@ -1,6 +1,5 @@
 package com.example.demo.service;
 
-import com.example.demo.config.EncryptionKeyAuthenticationHandler;
 import com.example.demo.exception.FileNotFoundException;
 import com.example.demo.exception.FileStorageException;
 import com.example.demo.model.Folder;
@@ -8,7 +7,6 @@ import com.example.demo.model.User;
 import com.example.demo.repository.FileRepository;
 import com.example.demo.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -18,12 +16,9 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -78,30 +73,11 @@ public class FolderService {
     }
 
     /**
-     * Get the current user's encryption key from their session.
-     * This key was derived from their password at login and exists ONLY in session.
-     */
-    private String getSessionEncryptionKey() {
-        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attrs == null) {
-            throw new FileStorageException("No request context available");
-        }
-        HttpSession session = attrs.getRequest().getSession(false);
-        if (session == null) {
-            throw new FileStorageException("No session available - please log in again");
-        }
-        String key = (String) session.getAttribute(EncryptionKeyAuthenticationHandler.ENCRYPTION_KEY_SESSION_ATTRIBUTE);
-        if (key == null) {
-            throw new FileStorageException("Encryption key not found in session - please log in again");
-        }
-        return key;
-    }
-
-    /**
-     * Store a file with zero-knowledge encryption.
-     * Files can be:
-     * 1. Client-side encrypted (filename ends with .enc.client) - stored as-is
-     * 2. Server-side encrypted using session key
+     * Store a file with TRUE zero-knowledge encryption.
+     *
+     * TRUE ZERO-KNOWLEDGE: The server NEVER has access to the encryption key.
+     * Files must be encrypted CLIENT-SIDE before upload.
+     * The server only stores the encrypted blob.
      */
     @Transactional
     public Folder storeFile(MultipartFile file) {
@@ -109,7 +85,13 @@ public class FolderService {
     }
 
     /**
-     * Store a file, optionally already encrypted client-side.
+     * Store a file, which should be encrypted client-side.
+     *
+     * TRUE ZERO-KNOWLEDGE ENCRYPTION:
+     * - Files encrypted client-side (.enc.client) are stored as-is
+     * - Server NEVER has the encryption key
+     * - Server CANNOT decrypt files
+     * - Unencrypted files are stored as-is (user's choice)
      */
     @Transactional
     public Folder storeFile(MultipartFile file, boolean clientEncrypted) {
@@ -133,27 +115,19 @@ public class FolderService {
         }
 
         // Include user ID in stored filename for isolation
-        // Use .enc.client extension for client-encrypted files, .enc for server-encrypted
-        String encSuffix = isClientEncrypted ? ".enc.client" : (encryptionEnabled ? ".enc" : "");
+        String encSuffix = isClientEncrypted ? ".enc.client" : "";
         String storedFileName = currentUser.getId() + "_" + UUID.randomUUID() + "_" + originalFileName + encSuffix;
         Path targetLocation = uploadPath.resolve(storedFileName);
 
         try (InputStream inputStream = file.getInputStream()) {
+            // Store file as-is (already encrypted client-side, or user chose not to encrypt)
+            Files.copy(inputStream, targetLocation);
+
             if (isClientEncrypted) {
-                // File is already encrypted client-side - store as-is!
-                // The server NEVER sees the plaintext or the encryption key
-                Files.copy(inputStream, targetLocation);
-                log.info("Client-encrypted file stored (server never saw plaintext): {} -> {} (user={})",
-                        originalFileName, storedFileName, currentUser.getUsername());
-            } else if (encryptionEnabled) {
-                // Fallback: Server-side encryption using session key
-                String sessionKey = getSessionEncryptionKey();
-                encryptionService.encryptToFile(inputStream, targetLocation, file.getSize(), sessionKey);
-                log.info("File encrypted server-side and stored: {} -> {} (user={})",
+                log.info("TRUE ZERO-KNOWLEDGE: Client-encrypted file stored (server NEVER saw plaintext or key): {} -> {} (user={})",
                         originalFileName, storedFileName, currentUser.getUsername());
             } else {
-                Files.copy(inputStream, targetLocation);
-                log.info("File stored (unencrypted): {} -> {} (user={})",
+                log.warn("File stored WITHOUT encryption: {} -> {} (user={})",
                         originalFileName, storedFileName, currentUser.getUsername());
             }
 
@@ -176,8 +150,10 @@ public class FolderService {
     }
 
     /**
-     * Load file as a Resource for streaming download (with zero-knowledge decryption).
-     * User can only download their own files using their session-stored key.
+     * Load file as a Resource for streaming download.
+     *
+     * TRUE ZERO-KNOWLEDGE: Server returns encrypted blob as-is.
+     * Decryption happens CLIENT-SIDE in the browser.
      */
     @Transactional(readOnly = true)
     public Resource loadFileAsResource(Long id) {
@@ -196,18 +172,10 @@ public class FolderService {
         try {
             String storedFileName = folder.getStoredFileName();
             boolean isClientEncrypted = storedFileName != null && storedFileName.endsWith(".enc.client");
-            boolean isServerEncrypted = storedFileName != null && storedFileName.endsWith(".enc") && !isClientEncrypted;
-
+            // TRUE ZERO-KNOWLEDGE: Server returns file as-is
+            // Decryption (if encrypted) happens CLIENT-SIDE in the browser
             if (isClientEncrypted) {
-                // Client-encrypted files are returned AS-IS
-                // Decryption happens in the browser using the client-side key
-                log.info("Returning client-encrypted file for browser decryption: {}", folder.getFileName());
-                return new InputStreamResource(Files.newInputStream(filePath));
-            } else if (isServerEncrypted) {
-                // Server-encrypted files are decrypted using session key
-                String sessionKey = getSessionEncryptionKey();
-                InputStream decryptedStream = encryptionService.decryptFromFile(filePath, sessionKey);
-                return new InputStreamResource(decryptedStream);
+                log.info("TRUE ZERO-KNOWLEDGE: Returning encrypted file for client-side decryption: {}", folder.getFileName());
             }
 
             return new InputStreamResource(Files.newInputStream(filePath));

@@ -224,14 +224,19 @@
     const progressSection = document.getElementById('progressSection');
     const progressBar = document.getElementById('progressBar');
 
-    // Check if encryption key is available
+    // Check if encryption key is available (now uses localStorage - persists across sessions)
     let hasEncryptionKey = false;
+    let currentUser = null;
     try {
-        if (typeof ZeroKnowledgeEncryption !== 'undefined' && ZeroKnowledgeEncryption.hasKey()) {
-            hasEncryptionKey = true;
-            console.log('🔑 Client-side encryption key available');
-        } else {
-            console.warn('⚠️ No client-side encryption key found. Server-side encryption will be used.');
+        if (typeof ZeroKnowledgeEncryption !== 'undefined') {
+            currentUser = ZeroKnowledgeEncryption.getCurrentUser();
+            if (ZeroKnowledgeEncryption.hasKey()) {
+                hasEncryptionKey = true;
+                console.log('🔑 Client-side encryption key available for user:', currentUser);
+                console.log('📦 Key stored in localStorage - persists across browser sessions');
+            } else {
+                console.warn('⚠️ No client-side encryption key found. Please log out and log in again.');
+            }
         }
     } catch (e) {
         console.warn('⚠️ Encryption module not available:', e);
